@@ -1,0 +1,14 @@
+Run the preprocessing: To process a directory of videos:
+
+deepfakes:
+python preprocess_deepfakes.py --input "datasets\FaceForensics++\FaceForensics++_C23\Deepfakes" --output ./processed --n_skip 20
+
+original:
+python preprocess_deepfakes.py --input "datasets\FaceForensics++\FaceForensics++_C23\original" --output ./processed_real --n_skip 20
+
+
+integrate the ViT and exposed the internal attention mechanisms 
+-- output_attentions=True
+
+python vit_deepfake_detector.py
+14 x 14 patches (giving attention)
