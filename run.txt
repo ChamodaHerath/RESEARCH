@@ -1,14 +1,12 @@
-Run the preprocessing: To process a directory of videos:
+preprocess_deepfakes
 
-deepfakes:
-python preprocess_deepfakes.py --input "datasets\FaceForensics++\FaceForensics++_C23\Deepfakes" --output ./processed --n_skip 20
-
-original:
-python preprocess_deepfakes.py --input "datasets\FaceForensics++\FaceForensics++_C23\original" --output ./processed_real --n_skip 20
-
-
-integrate the ViT and exposed the internal attention mechanisms 
--- output_attentions=True
-
-python vit_deepfake_detector.py
-14 x 14 patches (giving attention)
+.\venv\Scripts\python.exe preprocess_landmarks.py `
+  --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
+  --output-json "outputs/ffpp_landmarks.json" `
+  --faces-out-dir "outputs/faces_224" `
+  --predictor-path "shape_predictor_68_face_landmarks.dat" `
+  --sample-every 10 `
+  --save-debug `
+  --debug-dir "outputs/debug_landmarks" `
+  --resume-from-outputs `
+  --verbose

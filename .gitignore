@@ -1,4 +1,5 @@
 /datasets
 /venv
 /processed
-/processed_real
+/outputs
+/_pycache_
