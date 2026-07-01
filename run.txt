@@ -10,3 +10,50 @@ preprocess_deepfakes
   --debug-dir "outputs/debug_landmarks" `
   --resume-from-outputs `
   --verbose
+
+  get heatmap
+
+  image
+
+  .\venv\Scripts\python.exe baseline_heatmap_generator.py --image "C:\PROJECTS\RESEARCH - Copy\inputs\1.jpg"
+
+
+  video
+ 
+  .\venv\Scripts\python.exe baseline_heatmap_generator.py --video "C:\PROJECTS\RESEARCH - Copy\inputs\v1.mp4" --num-frames 4 --output "outputs\v1_grid.jpg"
+
+
+  Step 1 — Quick smoke test (one frame, full dual-head report)
+
+  cd "c:\PROJECTS\RESEARCH - Copy"
+python run_pipeline_single_frame.py --json outputs/ffpp_landmarks_test.json --key "Deepfakes/000_003.mp4::f000000" --output outputs/report_demo.json
+
+Full batch evaluation (all 172 test frames, classification + explanation metrics)
+
+python evaluate_pipeline.py --json outputs/ffpp_landmarks_test.json --output outputs/evaluation_results.json
+
+
+
+Step 3 — Run the calibration again (optional, generates updated fusion_config.json)
+python recalibrate_v2.py
+
+
+
+
+
+
+For a single image
+cd "c:\PROJECTS\RESEARCH - Copy"
+.\venv\Scripts\python.exe analyze.py --input path\to\face.jpg
+Save the report to JSON too:
+
+.\venv\Scripts\python.exe analyze.py --input path\to\face.jpg --output outputs\report.json
+For a video (every frame)
+.\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4
+Video with compact per-frame log + final aggregate (quieter):
+
+.\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4 --quiet
+Video — only every 5th frame (much faster for long clips):
+
+
+.\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4 --frame-step 5 --output outputs\video_report.js
