@@ -575,4 +575,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    from console_utf8 import ensure_utf8_stdout
+    ensure_utf8_stdout()
     main()

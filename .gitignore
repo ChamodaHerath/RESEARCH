@@ -8,3 +8,6 @@
 /dist
 /build
 /env
+.next/
+_pycache_/
+.pytest_cache/

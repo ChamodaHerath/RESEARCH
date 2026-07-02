@@ -1,0 +1,121 @@
+{
+  "evaluation_metadata": {
+    "total_frames": 5179,
+    "processed_frames": 5179,
+    "skipped_frames": 0,
+    "elapsed_seconds": 430.5,
+    "fps": 12.03
+  },
+  "classification_metrics": {
+    "accuracy": 0.7913,
+    "auc_roc": 0.9012,
+    "average_precision": 0.9415,
+    "brier_score": 0.1823,
+    "precision": 0.9309,
+    "recall": 0.7367,
+    "f1": 0.8225,
+    "confusion_matrix": {
+      "tp": 2504,
+      "fp": 186,
+      "tn": 1594,
+      "fn": 895
+    },
+    "ece": 0.1634,
+    "n_total": 5179,
+    "n_fake": 3399,
+    "n_real": 1780,
+    "n_skipped": 0
+  },
+  "explanation_metrics": {
+    "faithfulness_pass_rate": 1.0,
+    "mean_flagged_zones_per_fake_frame": 1.967,
+    "zone_flag_frequency": {
+      "forehead": 2303,
+      "chin_jaw": 1151,
+      "nose_bridge": 1036,
+      "left_eye": 894,
+      "left_cheek": 854,
+      "right_eye": 838,
+      "nose_tip": 352,
+      "right_cheek": 253,
+      "mouth": 5
+    },
+    "zone_R_separation": {
+      "left_eye": {
+        "fake_mean_R": 0.6075,
+        "real_mean_R": 0.4498,
+        "separation": 0.1578,
+        "flag_count": 894
+      },
+      "right_eye": {
+        "fake_mean_R": 0.5862,
+        "real_mean_R": 0.4481,
+        "separation": 0.1382,
+        "flag_count": 838
+      },
+      "nose_bridge": {
+        "fake_mean_R": 0.7419,
+        "real_mean_R": 0.4724,
+        "separation": 0.2695,
+        "flag_count": 1036
+      },
+      "nose_tip": {
+        "fake_mean_R": 0.5729,
+        "real_mean_R": 0.411,
+        "separation": 0.1619,
+        "flag_count": 352
+      },
+      "left_cheek": {
+        "fake_mean_R": 0.5504,
+        "real_mean_R": 0.4984,
+        "separation": 0.052,
+        "flag_count": 854
+      },
+      "right_cheek": {
+        "fake_mean_R": 0.4469,
+        "real_mean_R": 0.4132,
+        "separation": 0.0336,
+        "flag_count": 253
+      },
+      "mouth": {
+        "fake_mean_R": 0.3088,
+        "real_mean_R": 0.394,
+        "separation": -0.0852,
+        "flag_count": 5
+      },
+      "forehead": {
+        "fake_mean_R": 0.8607,
+        "real_mean_R": 0.5295,
+        "separation": 0.3312,
+        "flag_count": 2303
+      },
+      "chin_jaw": {
+        "fake_mean_R": 0.6357,
+        "real_mean_R": 0.4322,
+        "separation": 0.2035,
+        "flag_count": 1151
+      }
+    }
+  },
+  "bayesian_metrics": {
+    "beta_posterior": {
+      "map": 1.0,
+      "mean": 0.917,
+      "std": 0.0723,
+      "ci_lower": 0.7327,
+      "ci_upper": 0.998
+    },
+    "mean_CI_width_per_zone": {
+      "forehead": 0.0134,
+      "nose_bridge": 0.0207,
+      "left_eye": 0.0185,
+      "left_cheek": 0.0197,
+      "right_eye": 0.0188,
+      "right_cheek": 0.0211,
+      "chin_jaw": 0.0246,
+      "mouth": 0.0196,
+      "nose_tip": 0.0235
+    },
+    "note": "CI width = R_ci_upper - R_ci_lower per zone per frame, averaged across all frames where a zone was flagged. Narrower = more certain."
+  }
+}

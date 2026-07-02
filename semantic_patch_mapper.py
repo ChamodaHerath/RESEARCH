@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -128,8 +129,13 @@ class ConceptVector:
     # None when the Dirichlet prior has not been fitted (legacy path).
     R_ci_lower: Optional[float] = field(default=None, repr=False)
     R_ci_upper: Optional[float] = field(default=None, repr=False)
-    # R_ci_lower / R_ci_upper: 95 % credible interval on R(z) from β posterior
-    # uncertainty propagation; None when beta_std is unavailable.
+    # R_ci_lower / R_ci_upper: 95 % credible interval from β posterior
+    # uncertainty propagation, on the SAME scale as `confidence` above --
+    # i.e. on R(z) when zone_prior_score is None, or re-expressed on Q(z)
+    # (via the zone prior's own monotonic transform) when a zone prior is
+    # active. This keeps the reported interval consistent with the number it
+    # brackets; see predict_label_and_explanation(). None when beta_std is
+    # unavailable.
     zone_prior_score: Optional[float] = field(default=None, repr=False)
     # zone_prior_score: Q(z) — posterior zone anomaly probability from the
     # manipulation-type-conditioned Bayesian zone prior (Option 2).
@@ -586,7 +592,7 @@ def normalize_zone_scores(
         normalised : shape (9,), values in clip_range.
     """
     z = (scores - stats["mean"]) / stats["std"]
-    sigmoid = 1.0 / (1.0 + np.exp(-z))
+    sigmoid = 1.0 / (1.0 + np.exp(-np.clip(z, -50.0, 50.0)))
     lo, hi = clip_range
     return (lo + (hi - lo) * sigmoid).astype(np.float32)
 
@@ -608,6 +614,8 @@ def assign_severity(R_score: float) -> Optional[str]:
 def get_flagged_zones(
     R: np.ndarray,
     min_severity: str = "low",
+    zone_thresholds: Optional[Mapping[str, float]] = None,
+    max_zones: Optional[int] = None,
 ) -> List[Dict]:
     """
     Return zones above the minimum severity threshold, sorted by R_score descending.
@@ -619,13 +627,18 @@ def get_flagged_zones(
     Returns:
         List of dicts: [{"zone": ..., "R_score": ..., "severity": ...}, ...]
     """
-    threshold = SEVERITY_THRESHOLDS[min_severity]
     flagged = []
     for i, zone in enumerate(ZONE_NAMES):
+        threshold = (
+            float(zone_thresholds[zone])
+            if zone_thresholds is not None and zone in zone_thresholds
+            else SEVERITY_THRESHOLDS[min_severity]
+        )
         sev = assign_severity(float(R[i]))
         if sev is not None and float(R[i]) > threshold:
             flagged.append({"zone": zone, "R_score": float(R[i]), "severity": sev})
-    return sorted(flagged, key=lambda d: d["R_score"], reverse=True)
+    flagged = sorted(flagged, key=lambda d: d["R_score"], reverse=True)
+    return flagged[:max_zones] if max_zones is not None else flagged
 
 
 # ---------------------------------------------------------------------------
@@ -698,6 +711,8 @@ def build_concept_vectors_from_R(
     ci_lower: Optional[np.ndarray] = None,
     ci_upper: Optional[np.ndarray] = None,
     Q_scores: Optional[Dict] = None,
+    zone_thresholds: Optional[Mapping[str, float]] = None,
+    max_zones: Optional[int] = None,
 ) -> List[ConceptVector]:
     """
     Build concept vectors for all zones above min_severity threshold.
@@ -724,7 +739,12 @@ def build_concept_vectors_from_R(
         )
         score_for_flagging = q_array
 
-    flagged = get_flagged_zones(score_for_flagging, min_severity=min_severity)
+    flagged = get_flagged_zones(
+        score_for_flagging,
+        min_severity=min_severity,
+        zone_thresholds=zone_thresholds,
+        max_zones=max_zones,
+    )
     cvs: List[ConceptVector] = []
     for f in flagged:
         zone, eff_score = f["zone"], f["R_score"]
@@ -793,6 +813,14 @@ def generate_nl_explanation(cv: ConceptVector) -> str:
 # Faithfulness verifier  (Module 4b)
 # ---------------------------------------------------------------------------
 
+# Numeric claims embedded in generate_nl_explanation()'s output. Kept as module
+# constants (rather than inlined regexes) so verify_faithfulness and any future
+# caller parse claims the same way the generator writes them.
+_CONFIDENCE_PATTERN = re.compile(r"confidence:\s*([\d.]+)\s*%")
+_CI_PATTERN = re.compile(r"\[\s*([\d.]+)\s*[\u2013-]\s*([\d.]+)\s*%\s*\]")
+_NUMERIC_TOLERANCE = 0.05  # percentage points; generation always rounds to 1dp
+
+
 def verify_faithfulness(sentence: str, cv: ConceptVector) -> bool:
     """
     Verify that every claim in the NL sentence is traceable to the concept vector.
@@ -801,6 +829,14 @@ def verify_faithfulness(sentence: str, cv: ConceptVector) -> bool:
       1. Zone name present in sentence.
       2. Artifact type (or its first noun) present in sentence.
       3. A recognised severity adjective is present.
+      4. If a "confidence: X%" figure is stated, X must match cv.confidence
+         (rounded to 1dp) within a small numeric tolerance -- catches a
+         sentence that names the right zone/artifact but reports the wrong
+         number, which the original zone/artifact/severity-only checks could
+         not detect.
+      5. Credible-interval bounds are consistent both ways: if cv carries a
+         95% CI, the sentence must state it (and match it); if cv carries no
+         CI, the sentence must not claim one either.
 
     Args:
         sentence: NL explanation string.
@@ -819,7 +855,29 @@ def verify_faithfulness(sentence: str, cv: ConceptVector) -> bool:
         for adj in SEVERITY_ADJECTIVES.values()
     )
 
-    return zone_ok and artifact_ok and severity_ok
+    conf_ok = True
+    conf_match = _CONFIDENCE_PATTERN.search(sentence)
+    if conf_match is not None:
+        stated_conf = float(conf_match.group(1))
+        expected_conf = round(cv.confidence * 100, 1)
+        conf_ok = abs(stated_conf - expected_conf) <= _NUMERIC_TOLERANCE
+
+    has_cv_ci = cv.R_ci_lower is not None and cv.R_ci_upper is not None
+    ci_match = _CI_PATTERN.search(sentence)
+    if has_cv_ci:
+        if ci_match is None:
+            ci_ok = False  # cv has a credible interval but the sentence omits it
+        else:
+            expected_lower = round(cv.R_ci_lower * 100, 1)
+            expected_upper = round(cv.R_ci_upper * 100, 1)
+            ci_ok = (
+                abs(float(ci_match.group(1)) - expected_lower) <= _NUMERIC_TOLERANCE
+                and abs(float(ci_match.group(2)) - expected_upper) <= _NUMERIC_TOLERANCE
+            )
+    else:
+        ci_ok = ci_match is None  # sentence must not invent a CI the cv doesn't have
+
+    return zone_ok and artifact_ok and severity_ok and conf_ok and ci_ok
 
 
 def generate_verified_explanation(cv: ConceptVector) -> Tuple[str, bool]:
@@ -827,20 +885,36 @@ def generate_verified_explanation(cv: ConceptVector) -> Tuple[str, bool]:
     Generate a verified NL explanation.
 
     Returns:
-        (sentence, faithfulness_passed): sentence is always a valid template string.
-        If verification fails, returns the fallback template with a note appended.
+        (sentence, faithfulness_passed): sentence is always a valid, fully
+        faithful string built from cv's own fields. If the primary template
+        output somehow fails verification (e.g. a corrupted/overwritten
+        `cv.artifact_type` upstream, or a future template change that drifts
+        from cv), a minimal fallback sentence is reconstructed directly from
+        cv and re-verified -- `passed` always reflects whichever sentence is
+        actually returned, not just the primary attempt.
     """
     sentence = generate_nl_explanation(cv)
     passed   = verify_faithfulness(sentence, cv)
 
     if not passed:
-        # Fallback: reconstruct a minimal faithful sentence directly from cv fields
+        adj        = SEVERITY_ADJECTIVES.get(cv.severity, cv.severity)
         zone_label = cv.zone.replace("_", " ")
         conf_pct   = round(cv.confidence * 100, 1)
+        if cv.R_ci_lower is not None and cv.R_ci_upper is not None:
+            ci_str = (
+                f" [{round(cv.R_ci_lower * 100, 1)}\u2013"
+                f"{round(cv.R_ci_upper * 100, 1)}%]"
+            )
+        else:
+            ci_str = ""
         sentence = (
-            f"Anomaly detected in the {zone_label} region "
-            f"[{cv.severity} severity, confidence: {conf_pct}%]."
+            f"{adj} {cv.artifact_type} anomaly detected in the {zone_label} region "
+            f"(confidence: {conf_pct}%{ci_str})."
         )
+        # Re-verify the fallback itself -- it is built straight from cv's
+        # fields so it should always pass, but this guarantees `passed`
+        # never lies about the sentence actually being returned.
+        passed = verify_faithfulness(sentence, cv)
 
     return sentence, passed
 
@@ -923,6 +997,8 @@ def predict_label_and_explanation(
     beta_mean: Optional[float] = None,
     beta_std: Optional[float] = None,
     zone_prior_model=None,
+    zone_thresholds: Optional[Mapping[str, float]] = None,
+    max_flagged_zones: Optional[int] = None,
 ) -> ExplanationOutput:
     """
     Full SAEDF inference pipeline for one frame.
@@ -1029,6 +1105,26 @@ def predict_label_and_explanation(
         Q_arr = np.array([Q_dict.get(z, float(R[i])) for i, z in enumerate(ZONE_NAMES)],
                          dtype=np.float32)
 
+        # Re-express the R(z) credible interval on the Q(z) scale, since Q(z)
+        # (not R(z)) is what build_concept_vectors_from_R reports as
+        # `confidence` whenever a zone prior is active. compute_marginal_posteriors
+        # is, for a *fixed* method_probs weighting, a positive convex
+        # combination of terms each linear and non-decreasing in R(z); it is
+        # therefore itself non-decreasing in R(z), so applying it to
+        # [ci_lower_arr, ci_upper_arr] yields a valid credible interval on
+        # Q(z). Skipping this step would leave a Q(z)-based confidence figure
+        # paired with an R(z)-based interval on a different scale -- e.g. a
+        # nonsensical-looking "confidence: 73% [99-100%]".
+        if ci_lower_arr is not None and ci_upper_arr is not None:
+            q_ci_lower_dict = zone_prior_model.compute_marginal_posteriors(
+                ci_lower_arr, ZONE_NAMES, method_probs=method_probs
+            )
+            q_ci_upper_dict = zone_prior_model.compute_marginal_posteriors(
+                ci_upper_arr, ZONE_NAMES, method_probs=method_probs
+            )
+            ci_lower_arr = np.array([q_ci_lower_dict[z] for z in ZONE_NAMES], dtype=np.float32)
+            ci_upper_arr = np.array([q_ci_upper_dict[z] for z in ZONE_NAMES], dtype=np.float32)
+
     # Concept vectors — zone flagging on Q(z) when available, else R(z)
     cvs = build_concept_vectors_from_R(
         R,
@@ -1037,6 +1133,8 @@ def predict_label_and_explanation(
         ci_lower=ci_lower_arr,
         ci_upper=ci_upper_arr,
         Q_scores=Q_dict,
+        zone_thresholds=zone_thresholds,
+        max_zones=max_flagged_zones,
     )
 
     # NL explanations with faithfulness verification
@@ -1100,6 +1198,14 @@ class SemanticExplanationGenerator:
         self.artifact_prior = artifact_prior   # DirichletArtifactPrior or None
         self.A_stats        = A_stats          # population normalisation stats or None
         self.S_stats        = S_stats
+        self.zone_thresholds: Optional[Dict[str, float]] = (
+            {str(k): float(v) for k, v in cfg.get("zone_thresholds", {}).items()}
+            if cfg.get("zone_thresholds")
+            else None
+        )
+        self.max_flagged_zones: Optional[int] = (
+            int(cfg["max_flagged_zones"]) if cfg.get("max_flagged_zones") is not None else None
+        )
         self.beta_mean: Optional[float] = (
             float(beta_posterior["mean"]) if beta_posterior else None
         )
@@ -1134,6 +1240,8 @@ class SemanticExplanationGenerator:
             beta_mean=self.beta_mean,
             beta_std=self.beta_std,
             zone_prior_model=self.zone_prior_model,
+            zone_thresholds=self.zone_thresholds,
+            max_flagged_zones=self.max_flagged_zones,
         )
 
     def predict_batch(

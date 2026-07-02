@@ -160,44 +160,10 @@ def _build_refined_heatmap(
     probs = torch.softmax(logits, dim=-1)
 
     num_classes = logits.shape[-1]
-
-    def _infer_fake_index_from_id2label() -> int | None:
-        cfg = getattr(model, "config", None)
-        id2label = getattr(cfg, "id2label", None) if cfg is not None else None
-        if not isinstance(id2label, dict):
-            return None
-        fake_idx: int | None = None
-        real_idx: int | None = None
-        for k, v in id2label.items():
-            if not isinstance(v, str):
-                continue
-            label = v.lower()
-            try:
-                idx = int(k)
-            except Exception:
-                continue
-            if "fake" in label:
-                fake_idx = idx
-            if "real" in label:
-                real_idx = idx
-
-        if fake_idx is not None:
-            return fake_idx
-        # Common binary case: id2label only marks "real" (or uses "genuine"/"authentic").
-        if real_idx is not None and logits.shape[-1] == 2:
-            return 1 - real_idx
-        return None
-
     if getattr(extractor, "_fake_class_index", None) is not None:
         fake_idx = int(extractor._fake_class_index)
     else:
-        inferred = _infer_fake_index_from_id2label()
-        if inferred is not None:
-            fake_idx = inferred
-        elif num_classes == 2:
-            fake_idx = 1
-        else:
-            fake_idx = int(torch.argmax(logits, dim=-1).item())
+        fake_idx = extractor.get_fake_class_index(num_classes=num_classes)
 
     if not (0 <= fake_idx < num_classes):
         raise ValueError(f"Fake class index {fake_idx} is out of range for num_classes={num_classes}.")
@@ -285,10 +251,8 @@ def _build_raw_patch_grid(
 
     if getattr(extractor, "_fake_class_index", None) is not None:
         fake_idx = int(extractor._fake_class_index)
-    elif num_classes == 2:
-        fake_idx = 1
     else:
-        fake_idx = int(torch.argmax(logits, dim=-1).item())
+        fake_idx = extractor.get_fake_class_index(num_classes=num_classes)
 
     fake_prob = float(probs[0, fake_idx].detach().cpu().item())
     score = logits[:, fake_idx].sum()
@@ -401,6 +365,14 @@ def extract_full_pipeline_inputs(
             "fake_probability" : float in [0, 1]
             "phi"              : np.ndarray shape (196,) float32
             "alpha"            : np.ndarray shape (196,) float32
+            "heatmap_224"      : np.ndarray shape (224, 224) float32, normalised
+                                  [0, 1] -- the same blurred/thresholded
+                                  grad-rollout heatmap used to derive `phi`.
+                                  Callers that need a visual overlay (e.g. the
+                                  inference server) should reuse this instead
+                                  of re-running the model via
+                                  _build_refined_heatmap(), which would repeat
+                                  an identical forward+backward pass.
     """
     if image_bgr.shape != (224, 224, 3):
         raise ValueError(
@@ -449,10 +421,8 @@ def extract_full_pipeline_inputs(
     num_classes = logits.shape[-1]
     if getattr(extractor, "_fake_class_index", None) is not None:
         fake_idx = int(extractor._fake_class_index)
-    elif num_classes == 2:
-        fake_idx = 1
     else:
-        fake_idx = int(torch.argmax(logits, dim=-1).item())
+        fake_idx = extractor.get_fake_class_index(num_classes=num_classes)
     fake_prob = float(probs[0, fake_idx].detach().cpu().item())
 
     # ------------------------------------------------------------------ #
@@ -505,6 +475,7 @@ def extract_full_pipeline_inputs(
         "fake_probability": fake_prob,
         "phi":   phi,
         "alpha": alpha,
+        "heatmap_224": heat_224,
     }
 
 

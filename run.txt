@@ -1,5 +1,9 @@
 preprocess_deepfakes
 
+
+app
+& "c:\PROJECTS\RESEARCH - Copy\venv\Scripts\python.exe" inference_server.py --port 8000
+
 .\venv\Scripts\python.exe preprocess_landmarks.py `
   --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
   --output-json "outputs/ffpp_landmarks.json" `

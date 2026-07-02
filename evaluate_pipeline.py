@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to fusion_config.json.",
     )
     p.add_argument(
+        "--model-name",
+        type=str,
+        default=None,
+        help="Detector model name/path. Defaults to SAEDFPipeline default.",
+    )
+    p.add_argument(
         "--min-severity",
         type=str,
         default="medium",
@@ -97,17 +103,31 @@ def _try_sklearn_metrics(
     try:
         from sklearn.metrics import (
             accuracy_score,
+            average_precision_score,
+            brier_score_loss,
+            confusion_matrix,
             roc_auc_score,
             precision_score,
             recall_score,
             f1_score,
         )
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
         return {
             "accuracy":  round(float(accuracy_score(y_true, y_pred)), 4),
             "auc_roc":   round(float(roc_auc_score(y_true, y_prob)), 4),
+            "average_precision": round(float(average_precision_score(y_true, y_prob)), 4),
+            "brier_score": round(float(brier_score_loss(y_true, y_prob)), 4),
             "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
             "recall":    round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
             "f1":        round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+            "confusion_matrix": {
+                "tp": int(tp),
+                "fp": int(fp),
+                "tn": int(tn),
+                "fn": int(fn),
+            },
+            "ece": _expected_calibration_error(y_true, y_prob),
+            "calibration_bins": _calibration_bins(y_true, y_prob),
         }
     except ImportError:
         # sklearn not installed — compute accuracy manually
@@ -116,6 +136,41 @@ def _try_sklearn_metrics(
             "accuracy":  round(correct / max(len(y_true), 1), 4),
             "note":      "scikit-learn not installed; AUC/precision/recall unavailable",
         }
+
+
+def _calibration_bins(y_true: List[int], y_prob: List[float], n_bins: int = 10) -> List[Dict]:
+    y_true_arr = np.asarray(y_true, dtype=np.float32)
+    y_prob_arr = np.asarray(y_prob, dtype=np.float32)
+    rows: List[Dict] = []
+    for i in range(n_bins):
+        lo = i / n_bins
+        hi = (i + 1) / n_bins
+        if i == n_bins - 1:
+            mask = (y_prob_arr >= lo) & (y_prob_arr <= hi)
+        else:
+            mask = (y_prob_arr >= lo) & (y_prob_arr < hi)
+        count = int(mask.sum())
+        row: Dict = {"bin": [round(lo, 2), round(hi, 2)], "count": count}
+        if count:
+            conf = float(y_prob_arr[mask].mean())
+            empirical = float(y_true_arr[mask].mean())
+            row.update({
+                "mean_confidence": round(conf, 4),
+                "empirical_fake_rate": round(empirical, 4),
+                "gap": round(abs(conf - empirical), 4),
+            })
+        rows.append(row)
+    return rows
+
+
+def _expected_calibration_error(y_true: List[int], y_prob: List[float], n_bins: int = 10) -> float:
+    rows = _calibration_bins(y_true, y_prob, n_bins=n_bins)
+    total = max(len(y_true), 1)
+    ece = 0.0
+    for row in rows:
+        if row["count"]:
+            ece += (row["count"] / total) * row["gap"]
+    return round(float(ece), 4)
 
 
 def _zone_ci_width(report) -> Optional[Dict[str, float]]:
@@ -170,10 +225,13 @@ def main() -> None:
     t0 = time.time()
 
     print(f"Loading pipeline ...")
-    with SAEDFPipeline(
-        config_path=str(args.config),
-        min_severity=args.min_severity,
-    ) as pipe:
+    pipe_kwargs = {
+        "config_path": str(args.config),
+        "min_severity": args.min_severity,
+    }
+    if args.model_name:
+        pipe_kwargs["model_name"] = args.model_name
+    with SAEDFPipeline(**pipe_kwargs) as pipe:
         for i, (key, entry) in enumerate(all_entries):
             if i % 20 == 0:
                 elapsed = time.time() - t0
@@ -268,6 +326,7 @@ def main() -> None:
         "evaluation_metadata": {
             "landmark_json":   str(landmark_path),
             "config_path":     str(args.config),
+            "model_name":      args.model_name or "pipeline_default",
             "min_severity":    args.min_severity,
             "total_frames":    total,
             "processed_frames": processed,
@@ -289,6 +348,14 @@ def main() -> None:
                 "CI width = R_ci_upper - R_ci_lower per zone per frame, averaged "
                 "across all frames where a zone was flagged. Narrower = more certain."
             ),
+        },
+        # Raw per-frame predictions -- small enough to store inline, needed
+        # downstream by plot_evaluation.py to draw ROC/PR curves and
+        # calibration reliability diagrams (can't be reconstructed from the
+        # aggregate metrics above).
+        "raw_predictions": {
+            "y_true": [int(v) for v in y_true],
+            "y_prob": [round(float(v), 6) for v in y_prob],
         },
     }
 
@@ -345,4 +412,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    from console_utf8 import ensure_utf8_stdout
+    ensure_utf8_stdout()
     main()

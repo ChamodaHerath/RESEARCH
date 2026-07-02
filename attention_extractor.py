@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -25,7 +26,16 @@ DEFAULT_IMAGE_SIZE = 224
 DEFAULT_PATCH_GRID = 14
 NUM_PATCHES = DEFAULT_PATCH_GRID * DEFAULT_PATCH_GRID   # 196
 
-DEFAULT_HF_DEEPFAKE_MODEL = "prithivMLmods/Deep-Fake-Detector-v2-Model"
+DEFAULT_HF_DEEPFAKE_MODEL = os.getenv(
+    "SAEDF_MODEL_NAME",
+    "hamzenium/ViT-Deepfake-Classifier",
+)
+# Winner of the Phase 1 detector tournament (see audit_vit_models.py /
+# detector_benchmark.py, outputs/model_benchmarks/): FF++ AUC 1.000,
+# Celeb-DF cross-dataset AUC 0.901 -- vs. 0.429 / 0.558 for the previous
+# default (prithivMLmods/Deep-Fake-Detector-v2-Model). Drop-in compatible:
+# 224px input, patch_size=16 (196 patches), binary id2label, supports
+# output_attentions=True with eager attention.
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +179,13 @@ class AttentionExtractor:
     def _load_model(self, model_name: str, pretrained: bool) -> nn.Module:
         if self.is_hf:
             try:
-                from transformers import AutoImageProcessor, ViTForImageClassification
+                from transformers import AutoImageProcessor, AutoModelForImageClassification
             except Exception as e:
                 raise RuntimeError(
                     "transformers is required for HF models. pip install transformers"
                 ) from e
             self.image_processor = AutoImageProcessor.from_pretrained(model_name)
-            return ViTForImageClassification.from_pretrained(model_name)
+            return AutoModelForImageClassification.from_pretrained(model_name)
 
         try:
             import timm
@@ -279,6 +289,48 @@ class AttentionExtractor:
         if attn.ndim != 4:
             raise RuntimeError(f"Unexpected attention tensor shape: {tuple(attn.shape)}")
         return attn
+
+    def get_fake_class_index(self, num_classes: Optional[int] = None) -> int:
+        """
+        Infer the fake/deepfake class index from a model's id2label mapping.
+
+        This is intentionally centralised because benchmark, calibration, and
+        live inference must agree on which logit is interpreted as
+        fake_probability.  If no label metadata is available, binary models
+        fall back to index 1, matching the historical project convention.
+        """
+        cfg = getattr(self.model, "config", None)
+        id2label = getattr(cfg, "id2label", None) if cfg is not None else None
+        n = int(num_classes) if num_classes is not None else None
+
+        fake_idx: Optional[int] = None
+        real_idx: Optional[int] = None
+        if isinstance(id2label, dict):
+            for raw_idx, raw_label in id2label.items():
+                if not isinstance(raw_label, str):
+                    continue
+                label = raw_label.lower()
+                try:
+                    idx = int(raw_idx)
+                except Exception:
+                    continue
+                if any(token in label for token in ("fake", "deepfake", "forged", "manipulated", "synthetic")):
+                    fake_idx = idx
+                if any(token in label for token in ("real", "realism", "genuine", "authentic", "pristine")):
+                    real_idx = idx
+
+        if fake_idx is not None:
+            return fake_idx
+        if real_idx is not None and n == 2:
+            return 1 - real_idx
+        if n == 2:
+            return 1
+        if n is not None:
+            raise ValueError(
+                "Could not infer fake class index for non-binary classifier; "
+                f"id2label={id2label!r}"
+            )
+        return 1
 
     def _recompute_last_block_attention_timm(
         self, model_input: torch.Tensor

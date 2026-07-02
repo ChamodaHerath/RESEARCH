@@ -172,6 +172,7 @@ class ZonePriorModel:
         self,
         priors: Dict[str, Dict[str, Tuple[int, int]]] = ZONE_METHOD_PRIORS,
         evidence_weight: float = 3.0,
+        unknown_similarity_threshold: float = 0.40,
     ) -> None:
         """
         Args:
@@ -182,6 +183,7 @@ class ZonePriorModel:
         """
         self.priors          = priors
         self.evidence_weight = evidence_weight
+        self.unknown_similarity_threshold = unknown_similarity_threshold
         self.methods         = list(priors.keys())
 
         # Precompute prior-mean signatures per method for fast inference
@@ -263,6 +265,7 @@ class ZonePriorModel:
         R_scores: np.ndarray,
         zone_names: List[str],
         temperature: float = 10.0,
+        unknown_similarity_threshold: Optional[float] = None,
     ) -> Tuple[str, Dict[str, float]]:
         """
         Infer the most likely manipulation method from the R(z) zone pattern.
@@ -299,6 +302,15 @@ class ZonePriorModel:
             )
             sig_norm = np.linalg.norm(sig_vec) + 1e-8
             cosine_scores[method] = float(np.dot(R_vec, sig_vec) / (R_norm * sig_norm))
+
+        threshold = (
+            self.unknown_similarity_threshold
+            if unknown_similarity_threshold is None
+            else unknown_similarity_threshold
+        )
+        best_similarity = max(cosine_scores.values())
+        if best_similarity < threshold:
+            return "Unknown/Novel", {"Unknown/Novel": 1.0}
 
         # Softmax with temperature
         vals     = np.array(list(cosine_scores.values()))
@@ -341,6 +353,10 @@ class ZonePriorModel:
             Dict {zone_name: marginal_posterior_mean}.
         """
         if method_probs is None:
+            method_probs = {m: 1.0 / len(self.methods) for m in self.methods}
+        elif sum(float(method_probs.get(m, 0.0)) for m in self.methods) < 1e-8:
+            # Unknown/Novel case: avoid forcing a wrong method-specific prior.
+            # Fall back to a uniform mixture over known literature signatures.
             method_probs = {m: 1.0 / len(self.methods) for m in self.methods}
 
         marginal: Dict[str, float] = {zone: 0.0 for zone in zone_names}

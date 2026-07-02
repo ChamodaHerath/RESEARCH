@@ -1,9 +1,10 @@
+import argparse
 import json
 import numpy as np
 import cv2
 
-from attention_extractor import AttentionExtractor
-from baseline_heatmap_generator import extract_patch_gradient_scores
+from attention_extractor import AttentionExtractor, DEFAULT_HF_DEEPFAKE_MODEL
+from baseline_heatmap_generator import extract_full_pipeline_inputs
 from semantic_patch_mapper import (
     ARTIFACT_ONTOLOGY,
     compute_attention_zone_scores,
@@ -13,11 +14,24 @@ from semantic_patch_mapper import (
     ZONE_NAMES,
 )
 from bayesian_calibration import BayesianBetaCalibrator, DirichletArtifactPrior
+from zone_prior import ZonePriorModel
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Recalibrate SAEDF fusion for a selected detector.")
+    p.add_argument("--json", default="outputs/ffpp_landmarks_cal.json")
+    p.add_argument("--model-name", default=DEFAULT_HF_DEEPFAKE_MODEL)
+    p.add_argument("--output", default="configs/fusion_config.json")
+    p.add_argument("--device", default=None)
+    p.add_argument("--zone-threshold-quantile", type=float, default=0.95)
+    p.add_argument("--max-flagged-zones", type=int, default=3)
+    return p.parse_args()
 
 
 def main():
-    d = json.load(open("outputs/ffpp_landmarks_cal.json"))
-    extractor = AttentionExtractor(pretrained=True)
+    args = parse_args()
+    d = json.load(open(args.json))
+    extractor = AttentionExtractor(model_name=args.model_name, pretrained=True, device=args.device)
 
     A_raw_all, S_raw_all, labels = [], [], []
     try:
@@ -30,15 +44,9 @@ def main():
                 continue
             M = np.array(entry["zone_patch_matrix"], dtype=np.float32)
 
-            model_input = extractor.preprocess_bgr_images_for_model(
-                np.expand_dims(image_bgr, axis=0)
-            )
-            maps = extractor.extract_attention_maps(model_input)
-            alpha = maps.cls_patch_attention[0]
-            A_raw_all.append(compute_attention_zone_scores(alpha, M))
-
-            phi = extract_patch_gradient_scores(image_bgr, extractor)
-            S_raw_all.append(compute_shap_zone_scores(phi, M))
+            inputs = extract_full_pipeline_inputs(image_bgr, extractor)
+            A_raw_all.append(compute_attention_zone_scores(inputs["alpha"], M))
+            S_raw_all.append(compute_shap_zone_scores(inputs["phi"], M))
 
             labels.append(1 if entry.get("label") == "fake" else 0)
     finally:
@@ -81,6 +89,42 @@ def main():
         print(f"  {zone:14s} fake={f:.3f}  real={r:.3f}  diff={f-r:+.3f}")
 
     # ------------------------------------------------------------------
+    # Option 2 — Bayesian zone-prior posterior Q(z)
+    # ------------------------------------------------------------------
+    # NOTE: zone flagging at inference time (build_concept_vectors_from_R)
+    # uses Q(z) -- the manipulation-type-conditioned posterior -- not the
+    # raw fused R(z), because ZonePriorModel is always auto-loaded by
+    # SemanticExplanationGenerator. Q(z) is a shrinkage estimator pulled
+    # toward literature priors (Beta(alpha,beta) means), so it lives on a
+    # different, generally more compressed scale than R(z). Thresholds
+    # MUST therefore be calibrated on the Q(z) distribution itself, not on
+    # R(z) -- otherwise an R(z)-calibrated threshold can sit above the
+    # structural ceiling of Q(z) for every zone/method combination and no
+    # zone is ever flagged (silently breaking the explanation head).
+    zone_prior_model = ZonePriorModel()
+    Q_all = np.zeros_like(R_best)
+    for row_idx in range(R_best.shape[0]):
+        _, method_probs = zone_prior_model.infer_method(R_best[row_idx], ZONE_NAMES)
+        Q_dict = zone_prior_model.compute_marginal_posteriors(
+            R_best[row_idx], ZONE_NAMES, method_probs=method_probs
+        )
+        Q_all[row_idx] = [Q_dict[z] for z in ZONE_NAMES]
+
+    print("\nPer-zone Q(z) (Bayesian zone-prior posterior) at MAP \u03b2:")
+    for i, zone in enumerate(ZONE_NAMES):
+        f, r = Q_all[labels == 1, i].mean(), Q_all[labels == 0, i].mean()
+        print(f"  {zone:14s} fake={f:.3f}  real={r:.3f}  diff={f-r:+.3f}")
+
+    real_Q = Q_all[labels == 0]
+    zone_thresholds = {
+        zone: float(np.quantile(real_Q[:, i], args.zone_threshold_quantile))
+        for i, zone in enumerate(ZONE_NAMES)
+    }
+    print(f"\nPer-zone reporting thresholds on Q(z) scale (real q={args.zone_threshold_quantile:.2f}):")
+    for zone, threshold in zone_thresholds.items():
+        print(f"  {zone:14s} threshold={threshold:.3f}")
+
+    # ------------------------------------------------------------------
     # Option 3 — Dirichlet artifact-type prior
     # ------------------------------------------------------------------
     print("\nFitting Dirichlet artifact prior ...")
@@ -99,8 +143,13 @@ def main():
     # ------------------------------------------------------------------
     config = {
         "beta": float(best_beta),
+        "model_name": args.model_name,
         "beta_posterior": beta_summary,
         "severity_thresholds": {"high": 0.75, "medium": 0.50, "low": 0.25},
+        "zone_thresholds": zone_thresholds,
+        "zone_thresholds_scale": "Q(z)_marginal_posterior",
+        "zone_threshold_quantile": args.zone_threshold_quantile,
+        "max_flagged_zones": args.max_flagged_zones,
         "A_stats": {"mean": A_stats["mean"].tolist(), "std": A_stats["std"].tolist()},
         "S_stats": {"mean": S_stats["mean"].tolist(), "std": S_stats["std"].tolist()},
         "zone_names": ZONE_NAMES,
@@ -109,10 +158,12 @@ def main():
         "calibration_n_fake": int((labels==1).sum()),
         "calibration_n_real": int((labels==0).sum()),
     }
-    with open("configs/fusion_config.json", "w") as f:
+    with open(args.output, "w") as f:
         json.dump(config, f, indent=2)
-    print("\nSaved configs/fusion_config.json")
+    print(f"\nSaved {args.output}")
 
 
 if __name__ == "__main__":
+    from console_utf8 import ensure_utf8_stdout
+    ensure_utf8_stdout()
     main()

@@ -317,10 +317,19 @@ class DirichletArtifactPrior:
         """
         Posterior probability vector over artifact types, scaled by R_score.
 
-        logit_k = log(α_k) − rank_k · (1 − R_score) · temperature
+        logit_k = log(α_k) − rank_k · R_score · temperature
 
-        High R_score → small penalty on higher ranks → concentrated on rank-0.
-        Low  R_score → large penalty → spread across alternatives.
+        High R_score (strong, confident anomaly) → large penalty on higher
+        ranks → mass concentrates on the rank-0 (most common) artifact type.
+        Low R_score (borderline anomaly) → penalty ≈ 0 → distribution stays
+        close to the prior, i.e. retains more uncertainty across alternative
+        artifact types.
+
+        NOTE: this was previously implemented with a (1 - R_score) penalty
+        term, which inverted the intended behaviour (it made LOW R_score
+        concentrate on rank-0 and HIGH R_score spread out). Fixed to scale
+        the penalty by R_score directly so it matches the class-level
+        contract described above and in DirichletArtifactPrior's docstring.
 
         Args:
             zone        : zone name.
@@ -333,7 +342,7 @@ class DirichletArtifactPrior:
         alpha  = self._alpha[zone]
         K      = len(alpha)
         ranks  = np.arange(K, dtype=np.float64)
-        logits = np.log(alpha + 1e-12) - ranks * (1.0 - R_score) * temperature
+        logits = np.log(alpha + 1e-12) - ranks * R_score * temperature
         logits -= logits.max()
         p       = np.exp(logits)
         p      /= p.sum()

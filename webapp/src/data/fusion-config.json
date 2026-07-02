@@ -1,0 +1,44 @@
+{
+  "model_name": "hamzenium/ViT-Deepfake-Classifier",
+  "beta": 1.0,
+  "beta_posterior": {
+    "map": 1.0,
+    "mean": 0.917,
+    "std": 0.0723,
+    "ci_lower": 0.7327,
+    "ci_upper": 0.998
+  },
+  "severity_thresholds": {
+    "high": 0.75,
+    "medium": 0.5,
+    "low": 0.25
+  },
+  "zone_thresholds": {
+    "left_eye": 0.6912749767303467,
+    "right_eye": 0.6875300168991089,
+    "nose_bridge": 0.4631699904799461,
+    "nose_tip": 0.48743499815464014,
+    "left_cheek": 0.7122800022363662,
+    "right_cheek": 0.7137950122356415,
+    "mouth": 0.8002550005912781,
+    "forehead": 0.5909199774265289,
+    "chin_jaw": 0.6562800079584121
+  },
+  "zone_thresholds_scale": "Q(z)_marginal_posterior",
+  "zone_threshold_quantile": 0.95,
+  "max_flagged_zones": 3,
+  "zone_names": [
+    "left_eye",
+    "right_eye",
+    "nose_bridge",
+    "nose_tip",
+    "left_cheek",
+    "right_cheek",
+    "mouth",
+    "forehead",
+    "chin_jaw"
+  ],
+  "calibration_n_frames": 924,
+  "calibration_n_fake": 462,
+  "calibration_n_real": 462
+}
