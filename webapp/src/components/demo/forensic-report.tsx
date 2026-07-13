@@ -2,15 +2,116 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { FileText, Download, ShieldCheck, ShieldAlert, Fingerprint } from "lucide-react";
+import {
+  FileText,
+  Download,
+  ShieldCheck,
+  ShieldAlert,
+  Fingerprint,
+  CheckCircle2,
+} from "lucide-react";
 import { GlassCard, SectionBadge } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { generateReportPdf } from "@/lib/generate-report-pdf";
 import type { DetectionResponse } from "@/lib/types";
 
+function faithfulnessPct(result: DetectionResponse): string {
+  const v = result.explanation_validation?.live;
+  if (v) return `${(v.faithfulness_pass_rate * 100).toFixed(0)}%`;
+  const fromBreakdown = result.confidence_breakdown.find((c) =>
+    c.metric.toLowerCase().includes("faithfulness")
+  );
+  if (fromBreakdown) return `${fromBreakdown.value}%`;
+  return result.semantic_explanations.length > 0 ? "100%" : "—";
+}
+
+function whyZeroZones(result: DetectionResponse): string {
+  const live = result.explanation_validation?.live;
+  const isFake = result.prediction === "Fake";
+  const confPct = result.confidence;
+  // Displayed confidence is P(fake) when Fake, P(real) when Real.
+  const pFakePct = isFake ? confPct : Math.max(0, 100 - confPct);
+
+  const elevated = [...result.facial_regions]
+    .filter(
+      (r) =>
+        r.clears_threshold === true ||
+        r.flagged === true ||
+        (r.threshold != null && r.anomalyScore > r.threshold) ||
+        r.anomalyScore > 0.65
+    )
+    .sort((a, b) => b.anomalyScore - a.anomalyScore)
+    .slice(0, 3);
+
+  const zoneList =
+    elevated.length > 0
+      ? elevated
+          .map(
+            (r) =>
+              `${r.label} (${(r.anomalyScore * 100).toFixed(1)}%` +
+              (r.threshold != null
+                ? `; thr ${(r.threshold * 100).toFixed(1)}%`
+                : "") +
+              `)`
+          )
+          .join("; ")
+      : null;
+
+  const caveat =
+    ` Fake confidence is ${pFakePct.toFixed(1)}%. ` +
+    `Because the research policy withholds natural-language claims under these conditions, ` +
+    `we cannot fully claim those zones are corrupted.`;
+
+  if (!isFake) {
+    return (
+      `No semantic sentences were emitted (verdict is Real).` +
+      (zoneList
+        ? ` Elevated region scores for inspection: ${zoneList}.`
+        : ` Region scores are shown for inspection only.`) +
+      ` Fake confidence is ${pFakePct.toFixed(1)}%. We cannot claim facial zones are corrupted.`
+    );
+  }
+
+  if (pFakePct <= 70) {
+    return (
+      `No semantic sentences were emitted.` +
+      (zoneList
+        ? ` Candidate / elevated zones: ${zoneList}.`
+        : ` No zone clearly exceeded its calibrated threshold.`) +
+      caveat
+    );
+  }
+
+  if (
+    live?.causal_gate_enabled &&
+    (live.causal_zones_tested ?? 0) > 0 &&
+    live.causal_claims_retained === 0
+  ) {
+    return (
+      `No semantic sentences were retained: candidate zones were dropped by the causal gate ` +
+      `(occlusion did not reduce P(fake) by ≥ ${live.causal_min_drop ?? 0.03}).` +
+      (zoneList ? ` Zones considered: ${zoneList}.` : "") +
+      caveat
+    );
+  }
+
+  return (
+    `No semantic sentences were emitted.` +
+    (zoneList
+      ? ` Elevated region scores: ${zoneList}.`
+      : ` No region crossed the calibrated Q(z) threshold.`) +
+    caveat
+  );
+}
+
 export function ForensicReport({ result }: { result: DetectionResponse }) {
   const isFake = result.prediction === "Fake";
   const color = isFake ? "#ef4444" : "#22c55e";
+  const rankedRegions = [...result.facial_regions].sort(
+    (a, b) => b.anomalyScore - a.anomalyScore
+  );
+  const flaggedCount = rankedRegions.filter((r) => r.flagged).length;
+  const heatmapSrc = result.heatmap || result.attention_map;
 
   return (
     <motion.section
@@ -24,13 +125,12 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
         <SectionBadge>Forensic Documentation</SectionBadge>
         <h2 className="font-display text-3xl font-bold text-white">Digital Forensic Report</h2>
         <p className="max-w-xl text-sm text-slate-400">
-          A structured, auditable case report suitable for chain-of-custody documentation and
-          expert review.
+          Case file with classification verdict, attention heatmap, region scores, and
+          semantic explanations.
         </p>
       </div>
 
       <GlassCard glow className="mx-auto max-w-4xl overflow-hidden !p-0">
-        {/* Report "paper" preview */}
         <div className="bg-[#0b1120] p-1">
           <div className="rounded-2xl bg-gradient-to-b from-slate-100 to-slate-200 p-8 text-slate-900 sm:p-10">
             <div className="flex flex-col items-start justify-between gap-4 border-b border-slate-300 pb-6 sm:flex-row sm:items-center">
@@ -52,6 +152,7 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
               </div>
             </div>
 
+            {/* 1. Case information */}
             <ReportSection title="1. Case Information">
               <ReportGrid
                 rows={[
@@ -66,108 +167,145 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
               />
             </ReportSection>
 
-            <ReportSection title="2. Prediction Summary">
+            {/* 2. Classification head */}
+            <ReportSection title="2. Classification Head Result">
               <ReportGrid
                 rows={[
-                  ["Overall Verdict", result.prediction.toUpperCase()],
+                  ["Verdict", result.prediction.toUpperCase()],
                   ["Confidence", `${result.confidence.toFixed(2)}%`],
                   ["Risk Level", result.riskLevel],
                 ]}
               />
             </ReportSection>
 
-            {result.classification_reasoning && (
-              <ReportSection title="2b. Theoretical Basis — Why Real/Fake?">
-                <p className="mb-3 text-xs leading-relaxed text-slate-700">
-                  {result.classification_reasoning.summary}
-                </p>
-                <ol className="flex flex-col gap-2">
-                  {result.classification_reasoning.steps.map((step) => (
-                    <li
-                      key={step.stage}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
-                    >
-                      <p className="font-semibold text-slate-800">
-                        {step.stage}
-                        <span className="ml-2 font-mono text-[10px] text-blue-700">
-                          {step.value}
-                        </span>
+            {/* 3. Heatmap + facial regions */}
+            <ReportSection title="3. Heatmap & Detected Facial Regions">
+              <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={heatmapSrc}
+                  alt="Attention heatmap overlay"
+                  className="mx-auto max-h-72 w-full object-contain"
+                />
+              </div>
+              {result.mask_ground_truth?.available && result.mask_ground_truth.overlay && (
+                <div className="mb-4">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                    Manipulation mask ground truth (true edited region)
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={result.faceCrop}
+                        alt="Aligned face crop"
+                        className="mx-auto max-h-56 w-full object-contain"
+                      />
+                      <p className="bg-slate-100 px-2 py-1 text-center text-[10px] font-medium text-slate-600">
+                        Face crop
                       </p>
-                      {step.formula && (
-                        <p className="mt-0.5 font-mono text-[10px] text-slate-500">{step.formula}</p>
-                      )}
-                      <p className="mt-1 leading-relaxed">{step.interpretation}</p>
-                    </li>
-                  ))}
-                </ol>
-              </ReportSection>
-            )}
-
-            <ReportSection title="3. Evidence — Semantic Explanations">
-              <ul className="grid grid-cols-1 gap-3 text-xs text-slate-700">
-                {result.semantic_explanations.map((exp) => (
-                  <li key={exp.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-start gap-1.5">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-                      <div>
-                        <p>
-                          <strong>{exp.title}</strong> — {(exp.score * 100).toFixed(0)}% match
-                        </p>
-                        <p className="mt-1 text-slate-600">{exp.description}</p>
-                        {exp.theory && (
-                          <div className="mt-2 border-t border-slate-200 pt-2">
-                            <p className="font-semibold text-slate-800">Why this explanation?</p>
-                            <p className="mt-1 leading-relaxed">{exp.theory.summary}</p>
-                            <ul className="mt-2 flex flex-col gap-1.5">
-                              {exp.theory.steps.map((step) => (
-                                <li key={step.label} className="leading-relaxed text-slate-600">
-                                  <span className="font-medium text-slate-700">{step.label}:</span>{" "}
-                                  {step.detail}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </ReportSection>
-
-            <ReportSection title="4. Attention Analysis / Confidence Table">
+                    <div className="overflow-hidden rounded-xl border border-emerald-200 bg-slate-900">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={result.mask_ground_truth.overlay}
+                        alt="FF++ manipulation mask ground truth"
+                        className="mx-auto max-h-56 w-full object-contain"
+                      />
+                      <p className="bg-emerald-50 px-2 py-1 text-center text-[10px] font-medium text-emerald-800">
+                        Green = true edited pixels (FF++ mask)
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-600">
+                    {result.mask_ground_truth.note}
+                  </p>
+                </div>
+              )}
+              <p className="mb-3 text-[11px] text-slate-600">
+                Detected facial regions with corruption score and calibrated flagging
+                threshold (higher score = more likely manipulated).
+              </p>
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-300 text-left text-slate-500">
-                    <th className="py-1.5 font-semibold">Metric</th>
+                    <th className="py-1.5 font-semibold">Region</th>
                     <th className="py-1.5 font-semibold">Score</th>
+                    <th className="py-1.5 font-semibold">Threshold</th>
+                    <th className="py-1.5 font-semibold">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.confidence_breakdown.map((c) => (
-                    <tr key={c.metric} className="border-b border-slate-200">
-                      <td className="py-1.5">{c.metric}</td>
-                      <td className="py-1.5 font-semibold text-slate-800">{c.value}%</td>
+                  {rankedRegions.map((r) => (
+                    <tr key={r.region} className="border-b border-slate-200">
+                      <td className="py-1.5 font-medium text-slate-800">{r.label}</td>
+                      <td className="py-1.5 font-semibold text-slate-800">
+                        {(r.anomalyScore * 100).toFixed(1)}%
+                      </td>
+                      <td className="py-1.5 text-slate-600">
+                        {r.threshold != null
+                          ? `${(r.threshold * 100).toFixed(1)}%`
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 text-slate-600">
+                        {r.flagged
+                          ? "Flagged"
+                          : r.anomalyScore > 0.65
+                            ? "High"
+                            : r.anomalyScore > 0.35
+                              ? "Moderate"
+                              : "Low"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </ReportSection>
 
-            <ReportSection title="5. Recommendations">
-              <p className="text-xs leading-relaxed text-slate-700">
-                {isFake
-                  ? "This media exhibits strong indicators of synthetic manipulation. Treat as unverified, flag for manual forensic review, and avoid redistribution pending independent verification."
-                  : "No significant indicators of manipulation were detected. The media is assessed as authentic at the stated confidence level. Standard verification is still recommended for high-stakes use cases."}
-              </p>
-            </ReportSection>
+            {/* 4. Semantic explanation */}
+            <ReportSection title="4. Semantic Explanation" last>
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <ReportGrid
+                  rows={[
+                    ["Faithfulness score", faithfulnessPct(result)],
+                    ["Zones flagged", String(flaggedCount)],
+                    [
+                      "NL claims",
+                      String(result.semantic_explanations.length),
+                    ],
+                  ]}
+                />
+              </div>
 
-            <ReportSection title="6. Disclaimer" last>
-              <p className="text-[11px] italic leading-relaxed text-slate-500">
-                This report is generated by an academic research prototype for demonstration
-                purposes as part of a final year research project. It is not a certified legal
-                or forensic instrument.
-              </p>
+              <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Sentences
+              </h4>
+              {result.semantic_explanations.length === 0 ? (
+                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                  {whyZeroZones(result)}
+                </p>
+              ) : (
+                <ul className="mb-4 flex flex-col gap-2">
+                  {result.semantic_explanations.map((exp) => (
+                    <li
+                      key={exp.id}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                    >
+                      <p className="font-semibold text-slate-800">{exp.title}</p>
+                      <p className="mt-1 leading-relaxed">{exp.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Faithfulness PASS
+                        </span>
+                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                          {(exp.score * 100).toFixed(0)}% match
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </ReportSection>
           </div>
         </div>
@@ -207,7 +345,10 @@ function ReportGrid({ rows }: { rows: [string, string][] }) {
   return (
     <div className="grid grid-cols-1 gap-x-8 gap-y-1.5 text-xs sm:grid-cols-2">
       {rows.map(([label, value]) => (
-        <div key={label} className="flex justify-between gap-4 border-b border-dashed border-slate-200 py-1">
+        <div
+          key={label}
+          className="flex justify-between gap-4 border-b border-dashed border-slate-200 py-1"
+        >
           <span className="text-slate-500">{label}</span>
           <span className="font-medium text-slate-800">{value}</span>
         </div>

@@ -30,12 +30,11 @@ DEFAULT_HF_DEEPFAKE_MODEL = os.getenv(
     "SAEDF_MODEL_NAME",
     "hamzenium/ViT-Deepfake-Classifier",
 )
-# Winner of the Phase 1 detector tournament (see audit_vit_models.py /
-# detector_benchmark.py, outputs/model_benchmarks/): FF++ AUC 1.000,
-# Celeb-DF cross-dataset AUC 0.901 -- vs. 0.429 / 0.558 for the previous
-# default (prithivMLmods/Deep-Fake-Detector-v2-Model). Drop-in compatible:
-# 224px input, patch_size=16 (196 patches), binary id2label, supports
-# output_attentions=True with eager attention.
+# Default production demo checkpoint. It is intentionally a ViT/16 224px model:
+# the explanation layer depends on 14x14 = 196 patch tokens plus CLS attention.
+# You can override this at runtime with SAEDF_MODEL_NAME, but non-ViT models
+# such as SigLIP2 need a separate attention adapter before their explanations
+# can be claimed as CLS-to-patch ViT evidence.
 
 
 # ---------------------------------------------------------------------------

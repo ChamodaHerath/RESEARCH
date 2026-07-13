@@ -92,7 +92,7 @@ def _mode_kwargs(mode: str, cfg, artifact_prior, A_stats, S_stats, beta_posterio
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run SAEDF explanation ablation study.")
-    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test.json"))
+    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test_full.json"))
     p.add_argument("--config", type=Path, default=Path("configs/fusion_config.json"))
     p.add_argument("--model-name", default=DEFAULT_HF_DEEPFAKE_MODEL)
     p.add_argument("--output", type=Path, default=Path("outputs/ablation_results.json"))

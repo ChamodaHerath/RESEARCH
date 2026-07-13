@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pipeline import SAEDFPipeline
 
-DEFAULT_JSON = "outputs/ffpp_landmarks_test.json"
+DEFAULT_JSON = "outputs/ffpp_landmarks_test_full.json"
 DEFAULT_KEY  = "Deepfakes/000_003.mp4::f000000"
 
 
@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
         "--json",
         type=Path,
         default=DEFAULT_JSON,
-        help="Path to ffpp_landmarks*.json (default: outputs/ffpp_landmarks_test.json).",
+        help="Path to ffpp_landmarks*.json (default: outputs/ffpp_landmarks_test_full.json).",
     )
     p.add_argument(
         "--key",

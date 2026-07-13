@@ -8,8 +8,8 @@
  *   configs/fusion_config.json               -> Bayesian beta calibration
  *
  * Detector: hamzenium/ViT-Deepfake-Classifier (see fusion-config.json
- * `model_name`, and README.md "Detector: selection, not assumption" for the
- * 4-model tournament that selected it over the project's original detector).
+ * `model_name`, and README.md "Detector: configurable, not assumed" for the
+ * current configured detector and the surrounding calibration/evaluation notes).
  *
  * Nothing in this file is hand-typed or fabricated. Every number is a direct
  * field from those JSON files. The confusion matrix is the pipeline's own

@@ -25,7 +25,7 @@ from pipeline import SAEDFPipeline
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Print/save selective (non-universal) example forensic reports.")
-    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test.json"))
+    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test_full.json"))
     p.add_argument("--config", type=Path, default=Path("configs/fusion_config.json"))
     p.add_argument("--n", type=int, default=4, help="How many example reports to keep.")
     p.add_argument("--max-flagged", type=int, default=3, help="Only keep frames flagging <= this many zones.")

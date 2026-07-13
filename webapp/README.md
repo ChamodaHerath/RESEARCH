@@ -44,9 +44,8 @@ uploaded file by the actual research pipeline:
 
 - Face detection (MTCNN) + 68-point landmarks (dlib)
 - A real forward pass of the pretrained ViT deepfake classifier
-  (`hamzenium/ViT-Deepfake-Classifier` — selected via a systematic
-  benchmark tournament over candidate checkpoints, see the repo root
-  `README.md`)
+  (`hamzenium/ViT-Deepfake-Classifier` by default; override with
+  `SAEDF_MODEL_NAME` only after recalibrating `configs/fusion_config.json`)
 - Real CLS-attention (`A(z)`) and grad-weighted attention-rollout (`S(z)`)
   zone scores, fused via the calibrated Bayesian `β` from
   `configs/fusion_config.json`

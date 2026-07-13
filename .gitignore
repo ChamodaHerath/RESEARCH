@@ -2,12 +2,14 @@
 /venv
 /processed
 /outputs
-/_pycache_
 /inputs
 /node_modules
 /dist
 /build
 /env
 .next/
-_pycache_/
+__pycache__/
+**/__pycache__/
 .pytest_cache/
+*.pyc
+run.txt

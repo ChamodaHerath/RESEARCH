@@ -76,12 +76,94 @@ def test_risk_level_from_probability_fake_tiers(prob, expected):
 
 def test_build_facial_regions_schema_and_aggregation():
     explanation = _make_explanation()
-    regions = inference_server.build_facial_regions(explanation)
+    regions = inference_server.build_facial_regions(explanation, _make_bundle())
     region_names = {r["region"] for r in regions}
-    assert region_names == {"forehead", "eyes", "nose", "mouth", "jaw"}
+    assert region_names == set(ZONE_NAMES)
+    assert len(regions) == 9
     for r in regions:
-        assert "anomalyScore" in r and "label" in r
+        assert "anomalyScore" in r and "label" in r and "flagged" in r
         assert 0.0 <= r["anomalyScore"] <= 1.0
+    # Only the concept-vector zone is flagged (authoritative pipeline set)
+    flagged = [r for r in regions if r["flagged"]]
+    assert len(flagged) == 1
+    assert flagged[0]["region"] == ZONE_NAMES[0]
+
+
+def test_build_facial_regions_real_never_flags():
+    """Real verdict ⇒ Flagged No for every zone, regardless of score."""
+    explanation = _make_explanation(n_flagged=0, with_q=True)
+    explanation.label = "Real"
+    explanation.fake_probability = 0.1
+    mouth_i = ZONE_NAMES.index("mouth")
+    Q = np.full(9, 0.2, dtype=np.float32)
+    Q[mouth_i] = 0.95
+    explanation.Q_scores = Q
+    bundle = SimpleNamespace(
+        explainer=SimpleNamespace(
+            beta=0.4,
+            min_severity="medium",
+            zone_thresholds={z: 0.1 for z in ZONE_NAMES},
+            min_fake_probability_for_explanations=0.70,
+        )
+    )
+    regions = inference_server.build_facial_regions(explanation, bundle)
+    assert all(r["flagged"] is False for r in regions)
+
+
+def test_build_facial_regions_flagged_only_from_concept_vectors():
+    """Display Flagged Yes tracks explanation survivors, not score alone."""
+    explanation = _make_explanation(n_flagged=0, with_q=True)
+    explanation.label = "Fake"
+    explanation.fake_probability = 0.9
+    mouth_i = ZONE_NAMES.index("mouth")
+    Q = np.full(9, 0.2, dtype=np.float32)
+    Q[mouth_i] = 0.739
+    explanation.Q_scores = Q
+    # No concept vectors → not flagged even if score > thr
+    bundle = SimpleNamespace(
+        explainer=SimpleNamespace(
+            beta=0.4,
+            min_severity="medium",
+            zone_thresholds={z: 0.99 for z in ZONE_NAMES} | {"mouth": 0.669},
+            min_fake_probability_for_explanations=0.70,
+        )
+    )
+    regions = inference_server.build_facial_regions(explanation, bundle)
+    mouth = next(r for r in regions if r["region"] == "mouth")
+    assert mouth["clears_threshold"] is True
+    assert mouth["flagged"] is False
+
+    # Add mouth to concept vectors → flagged
+    explanation.concept_vectors = [
+        ConceptVector(
+            zone="mouth",
+            artifact_type="blending boundary artefact",
+            severity="high",
+            confidence=0.739,
+            R_score=0.739,
+            flag_reason="calibrated_threshold",
+        )
+    ]
+    regions2 = inference_server.build_facial_regions(explanation, bundle)
+    mouth2 = next(r for r in regions2 if r["region"] == "mouth")
+    assert mouth2["flagged"] is True
+
+
+def test_build_explanation_theory_mentions_per_zone_threshold():
+    explanation = _make_explanation(n_flagged=1)
+    cv = explanation.concept_vectors[0]
+    cv.zone_prior_score = 0.75
+    bundle = SimpleNamespace(
+        explainer=SimpleNamespace(
+            beta=0.4,
+            min_severity="medium",
+            zone_thresholds={z: 0.5 for z in ZONE_NAMES},
+        )
+    )
+    theory = inference_server.build_explanation_theory(cv, bundle, explanation=explanation)
+    assert "per-zone" in theory["summary"].lower()
+    assert "medium threshold" not in theory["summary"].lower()
+    assert "0.5000" in theory["summary"] or "0.50" in theory["summary"]
 
 
 def test_build_semantic_explanations_schema_and_sort_order():

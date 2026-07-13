@@ -66,23 +66,12 @@ export default function AboutPage() {
           <BookOpenText className="h-5 w-5" />
           <span className="text-xs font-semibold uppercase tracking-widest">Research Abstract</span>
         </div>
-        <p className="text-sm leading-relaxed text-slate-300 sm:text-base">
-          The proliferation of generative adversarial networks and diffusion-based synthesis has
-          made photorealistic deepfake content trivially accessible, posing significant risks to
-          digital trust, journalism, and legal evidence integrity. While existing deepfake
-          detectors report strong classification accuracy, they largely function as black boxes,
-          offering little insight into the specific visual evidence supporting a verdict. This
-          research proposes an{" "}
-          <span className="font-semibold text-white">
-            Explainable Deepfake Detection framework built on Vision Transformers
-          </span>
-          , which combines patch-based self-attention encoding with a semantic patch-mapping
-          module that translates raw attention weights into interpretable, region-level forensic
-          explanations. By aligning attention rollout maps with facial landmark zones and
-          cross-referencing lighting, texture, and temporal consistency signals, the system
-          produces structured forensic reports that mirror the reasoning process of a human
-          digital-forensics analyst — improving transparency, auditability, and trust in
-          automated deepfake detection systems.
+        <p className="text-sm  align-justify leading-relaxed text-slate-300 sm:text-base">
+        The rapid growth of hyper-realistic deepfakes presents a serious threat to digital trust, public communication, and forensic evidence. Although modern deepfake detectors can achieve strong classification performance, many operate as black-box systems that provide only a binary prediction without explaining the visual evidence behind the decision. This research addresses that limitation by proposing an explainable deepfake detection framework based on Vision Transformers (ViTs) and semantic facial-region analysis.
+The proposed system uses a pretrained Vision Transformer classifier to estimate the probability that a face image is manipulated, while an explainability pipeline converts internal model evidence into human-readable forensic reasoning. Facial landmarks are extracted using a 68-point landmark model and mapped onto semantically meaningful facial zones such as the eyes, mouth, nose, and jawline. The framework combines two sources of ViT evidence: CLS-to-patch attention and grad-weighted attention rollout. These signals are aggregated over landmark-defined zones and fused using a Bayesian calibration module that estimates zone-level manipulation evidence with uncertainty-aware confidence intervals.
+A key contribution of this work is the generation of dual-head forensic reports. The first head provides the classification result, fake probability, confidence tier, and model identity. The second head provides semantic explanations under a precision-first research policy: zone claims are emitted only for confident Fake verdicts (P(fake) > 0.70), only when the zone posterior Q(z) exceeds a real-face 85th-percentile calibrated threshold, and only when causal occlusion confirms that the zone moves P(fake). Zone fusion uses the β posterior mean so both attention and gradient evidence contribute. Natural-language rationales are faithfulness-verified against the underlying concept vector. On FaceForensics++ manipulation-mask ground truth, flagged zones achieve high localisation precision (~97.7%) and near-ceiling pointing-game accuracy (~99.7%), supporting the claim that retained explanations coincide with truly manipulated regions rather than over-flagging authentic faces.
+The system is evaluated on FaceForensics++ and Celeb-DF, demonstrating strong in-domain and cross-dataset performance using the selected ViT detector. By combining transformer-based detection with Bayesian semantic explanation, this research provides an interpretable deepfake detection framework suitable for forensic analysts, researchers, and high-stakes decision-making contexts where both accuracy and accountability are required.
+
         </p>
       </GlassCard>
 
@@ -141,7 +130,7 @@ export default function AboutPage() {
         <SectionHeading
           eyebrow="Data & Evaluation"
           title="Evaluated on real held-out benchmark partitions"
-          description="The ViT classifier backbone (hamzenium/ViT-Deepfake-Classifier) is a pretrained third-party checkpoint, selected from a systematic tournament of candidates (see README.md) rather than trained from scratch by this research. This project's contribution is the calibrated attention/gradient fusion and Bayesian zone-explanation layer built on top of it, plus the methodology used to choose a credible backbone in the first place."
+          description="The ViT classifier backbone (hamzenium/ViT-Deepfake-Classifier) is a pretrained third-party checkpoint, currently set to this Hugging Face ViT/16 model at the user's request rather than trained from scratch by this research. This project's contribution is the calibrated attention/gradient fusion and Bayesian zone-explanation layer built on top of it, plus the methodology used to choose a credible backbone in the first place."
         />
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           {DATASETS.map((ds) => (

@@ -46,9 +46,9 @@ export function SemanticExplanationsCard({
           Semantic Explanations
         </h3>
         <p className="text-sm leading-relaxed text-slate-400">
-          No zones crossed the calibrated anomaly threshold for this frame, so the
-          explainability layer did not emit zone-level concept vectors. The Real/Fake
-          verdict above comes from the ViT classifier probability alone.
+          No zone crossed the calibrated flagging threshold (or survived the causal gate),
+          so no natural-language claims were emitted. All 9 region corruption scores are
+          still shown below — higher score means that region is more likely manipulated.
         </p>
       </GlassCard>
     );

@@ -125,3 +125,89 @@ def test_compute_marginal_posteriors_falls_back_to_uniform_for_unknown_method(mo
     )
     for zone in ZONE_NAMES:
         assert marginal[zone] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Learned signatures + learned linear classifier
+# ---------------------------------------------------------------------------
+
+def _one_hot_signatures() -> dict:
+    """Learned signatures where each method peaks on a distinct zone."""
+    peak_zones = {
+        "Deepfakes": "mouth",
+        "Face2Face": "left_eye",
+        "FaceSwap": "chin_jaw",
+        "NeuralTextures": "left_cheek",
+    }
+    return {
+        m: {z: (0.9 if z == peak else 0.05) for z in ZONE_NAMES}
+        for m, peak in peak_zones.items()
+    }
+
+
+def test_learned_signatures_override_cosine_inference():
+    sigs = _one_hot_signatures()
+    model = ZonePriorModel(signatures=sigs)
+    assert model.signature_source == "learned"
+    R = np.array([sigs["FaceSwap"][z] for z in ZONE_NAMES])
+    best_method, probs = model.infer_method(R, ZONE_NAMES)
+    assert best_method == "FaceSwap"
+    assert sum(probs.values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_learned_signatures_do_not_change_beta_priors():
+    """Learned signatures only affect method inference; the Beta priors used
+    for the Q(z) posterior must remain the literature values."""
+    model = ZonePriorModel(signatures=_one_hot_signatures())
+    default = ZonePriorModel()
+    for method in MANIPULATION_METHODS:
+        for zone in ZONE_NAMES:
+            assert model.prior_mean(zone, method) == pytest.approx(
+                default.prior_mean(zone, method)
+            )
+
+
+def _trivial_classifier() -> dict:
+    """Linear classifier whose weights make the class score equal to the
+    standardized value of one dedicated zone per class."""
+    classes = MANIPULATION_METHODS
+    coef = np.zeros((len(classes), len(ZONE_NAMES)))
+    for i in range(len(classes)):
+        coef[i, i] = 10.0  # class i keys off zone i
+    return {
+        "classes": classes,
+        "coef": coef.tolist(),
+        "intercept": [0.0] * len(classes),
+        "feature_mean": [0.5] * len(ZONE_NAMES),
+        "feature_std": [0.1] * len(ZONE_NAMES),
+        "zone_names": ZONE_NAMES,
+    }
+
+
+def test_classifier_takes_precedence_and_predicts_expected_class():
+    model = ZonePriorModel(classifier=_trivial_classifier())
+    for i, expected in enumerate(MANIPULATION_METHODS):
+        R = np.full(len(ZONE_NAMES), 0.5)
+        R[i] = 0.9  # boost the zone that class i keys off
+        best_method, probs = model.infer_method(R, ZONE_NAMES)
+        assert best_method == expected
+        assert set(probs.keys()) == set(MANIPULATION_METHODS)
+        assert sum(probs.values()) == pytest.approx(1.0, abs=1e-3)
+
+
+def test_from_signature_file_roundtrip(tmp_path):
+    import json as _json
+
+    payload = {
+        "signatures": _one_hot_signatures(),
+        "classifier": _trivial_classifier(),
+    }
+    path = tmp_path / "method_signatures.json"
+    path.write_text(_json.dumps(payload), encoding="utf-8")
+
+    model = ZonePriorModel.from_signature_file(path)
+    assert model.signature_source == str(path)
+    R = np.full(len(ZONE_NAMES), 0.5)
+    R[0] = 0.9
+    best_method, _ = model.infer_method(R, ZONE_NAMES)
+    assert best_method == MANIPULATION_METHODS[0]

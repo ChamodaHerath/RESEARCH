@@ -16,6 +16,15 @@ Runs SAEDFPipeline over every frame in a landmark JSON and computes:
     - Mean 95 % credible interval width per zone  (R_ci_upper - R_ci_lower)
     - β posterior summary from fusion_config.json
 
+  Statistical rigor (eval_metrics.py)
+    - Video-level metrics — one aggregated prediction per source video,
+      since frames of the same video are correlated and frame-level counts
+      overstate the effective sample size.
+    - Cluster-bootstrap 95 % CIs on accuracy / AUC / recall, resampling whole
+      videos rather than frames.
+    - Per-manipulation-method breakdown (FF++: Deepfakes / Face2Face /
+      FaceSwap / NeuralTextures), each method's fakes vs all reals.
+
 Usage
 -----
     python evaluate_pipeline.py
@@ -35,10 +44,17 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from eval_metrics import (
+    per_method_breakdown,
+    standard_bootstrap_metrics,
+    video_level_metrics,
+)
+from ffpp_utils import parse_ffpp_method, video_id_from_key
+from landmark_io import load_landmark_json
 from pipeline import SAEDFPipeline
 from semantic_patch_mapper import ZONE_NAMES, load_fusion_config
 
-DEFAULT_JSON   = "outputs/ffpp_landmarks_test.json"
+DEFAULT_JSON   = "outputs/ffpp_landmarks_test_full.json"
 DEFAULT_OUTPUT = "outputs/evaluation_results.json"
 
 
@@ -193,8 +209,7 @@ def main() -> None:
     landmark_path = Path(args.json)
     if not landmark_path.exists():
         raise FileNotFoundError(f"Landmark JSON not found: {landmark_path}")
-    with open(landmark_path) as fh:
-        data = json.load(fh)
+    data = load_landmark_json(landmark_path)
     frames_dict: Dict = data.get("frames", data)
     all_entries = list(frames_dict.items())
 
@@ -212,6 +227,8 @@ def main() -> None:
     y_true:    List[int]   = []   # ground-truth label (1=fake, 0=real)
     y_pred:    List[int]   = []   # predicted label from classifier
     y_prob:    List[float] = []   # fake_probability
+    video_ids: List[str]   = []   # per-frame source-video id (cluster id)
+    methods:   List[Optional[str]] = []   # FF++ manipulation method (fakes only)
 
     # Explanation accumulators
     faithfulness_scores: List[float]       = []   # per frame: fraction passed
@@ -250,6 +267,10 @@ def main() -> None:
             y_true.append(gt_label)
             y_prob.append(report.classification.fake_probability)
             y_pred.append(1 if report.classification.label == "Fake" else 0)
+            video_ids.append(entry.get("video_path") or video_id_from_key(key))
+            methods.append(
+                (entry.get("method") or parse_ffpp_method(key)) if gt_label == 1 else None
+            )
 
             # --- Explanation faithfulness ---
             passed = report.explanation.faithfulness_passed
@@ -295,6 +316,13 @@ def main() -> None:
     classification_metrics["n_real"]     = int(processed - sum(y_true))
     classification_metrics["n_skipped"]  = skipped
 
+    # Statistical rigor: video-level metrics, cluster-bootstrap CIs,
+    # per-method breakdown (methods list is all-None for non-FF++ data,
+    # in which case the breakdown is empty and omitted from the printout).
+    video_metrics     = video_level_metrics(y_true, y_prob, video_ids)
+    bootstrap_cis     = standard_bootstrap_metrics(y_true, y_prob, video_ids)
+    method_breakdown  = per_method_breakdown(y_true, y_prob, video_ids, methods)
+
     # Explanation metrics
     faithfulness_rate = round(float(np.mean(faithfulness_scores)), 4) if faithfulness_scores else None
     mean_flagged_fake = round(float(np.mean(flagged_zone_counts_fake)), 3) if flagged_zone_counts_fake else None
@@ -335,6 +363,9 @@ def main() -> None:
             "fps":             round(processed / max(elapsed_total, 1e-6), 2),
         },
         "classification_metrics": classification_metrics,
+        "video_level_metrics": video_metrics,
+        "bootstrap_confidence_intervals": bootstrap_cis,
+        "per_method_metrics": method_breakdown,
         "explanation_metrics": {
             "faithfulness_pass_rate":    faithfulness_rate,
             "mean_flagged_zones_per_fake_frame": mean_flagged_fake,
@@ -356,6 +387,8 @@ def main() -> None:
         "raw_predictions": {
             "y_true": [int(v) for v in y_true],
             "y_prob": [round(float(v), 6) for v in y_prob],
+            "video_ids": video_ids,
+            "methods": methods,
         },
     }
 
@@ -369,7 +402,28 @@ def main() -> None:
     print("\n[CLASSIFICATION]")
     cm = results["classification_metrics"]
     for k, v in cm.items():
+        if k == "calibration_bins":
+            continue
         print(f"  {k:30s}: {v}")
+
+    print("\n[VIDEO-LEVEL]")
+    vm = results["video_level_metrics"]
+    for k in ("n_videos", "n_fake_videos", "n_real_videos", "accuracy",
+              "auc_roc", "precision", "recall", "confusion_matrix"):
+        print(f"  {k:30s}: {vm.get(k)}")
+
+    print("\n[95% BOOTSTRAP CIs — video-cluster resampling]")
+    for metric, ci in results["bootstrap_confidence_intervals"].items():
+        if isinstance(ci, dict):
+            print(f"  {metric:12s}: {ci['point']}  [{ci['ci_lower']} – {ci['ci_upper']}]")
+
+    if results["per_method_metrics"]:
+        print("\n[PER-METHOD BREAKDOWN — each method's fakes vs all reals]")
+        for m, info in results["per_method_metrics"].items():
+            print(f"  {m:16s}: frame recall={info['frame_recall']}  "
+                  f"video recall={info['video_recall']}  "
+                  f"AUC={info['auc_vs_reals']}  "
+                  f"(n={info['n_fake_frames']} frames / {info['n_fake_videos']} videos)")
 
     print("\n[EXPLANATION]")
     em = results["explanation_metrics"]

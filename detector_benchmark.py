@@ -27,9 +27,9 @@ from attention_extractor import DEFAULT_HF_DEEPFAKE_MODEL, AttentionExtractor
 
 DEFAULT_MODELS = [
     DEFAULT_HF_DEEPFAKE_MODEL,
+    "prithivMLmods/Deep-Fake-Detector-v2-Model",
     "prithivMLmods/Deepfake-Detection-Exp-02-21",
     "dima806/deepfake_vs_real_image_detection",
-    "hamzenium/ViT-Deepfake-Classifier",
 ]
 
 
@@ -153,7 +153,7 @@ def benchmark_model(model_name: str, entries: List[Tuple[str, Dict]], device: st
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Fast benchmark of candidate SAEDF detector heads.")
-    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test.json"))
+    p.add_argument("--json", type=Path, default=Path("outputs/ffpp_landmarks_test_full.json"))
     p.add_argument("--models", nargs="*", default=DEFAULT_MODELS)
     p.add_argument("--output", type=Path, default=Path("outputs/model_benchmarks/detector_benchmark.json"))
     p.add_argument("--max-frames", type=int, default=None)

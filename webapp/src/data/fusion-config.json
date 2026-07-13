@@ -1,12 +1,12 @@
 {
   "model_name": "hamzenium/ViT-Deepfake-Classifier",
-  "beta": 1.0,
+  "beta": 0.9329,
   "beta_posterior": {
-    "map": 1.0,
-    "mean": 0.917,
-    "std": 0.0723,
-    "ci_lower": 0.7327,
-    "ci_upper": 0.998
+    "map": 0.9329,
+    "mean": 0.8685,
+    "std": 0.0908,
+    "ci_lower": 0.6597,
+    "ci_upper": 0.994
   },
   "severity_thresholds": {
     "high": 0.75,
@@ -14,19 +14,58 @@
     "low": 0.25
   },
   "zone_thresholds": {
-    "left_eye": 0.6912749767303467,
-    "right_eye": 0.6875300168991089,
-    "nose_bridge": 0.4631699904799461,
-    "nose_tip": 0.48743499815464014,
-    "left_cheek": 0.7122800022363662,
-    "right_cheek": 0.7137950122356415,
-    "mouth": 0.8002550005912781,
-    "forehead": 0.5909199774265289,
-    "chin_jaw": 0.6562800079584121
+    "left_eye": 0.6417600512504578,
+    "right_eye": 0.6565850973129272,
+    "nose_bridge": 0.47173503041267395,
+    "nose_tip": 0.5228150486946106,
+    "left_cheek": 0.6923150420188904,
+    "right_cheek": 0.6754800081253052,
+    "mouth": 0.7322400808334351,
+    "forehead": 0.5328501462936401,
+    "chin_jaw": 0.6613200306892395
   },
   "zone_thresholds_scale": "Q(z)_marginal_posterior",
-  "zone_threshold_quantile": 0.95,
+  "zone_threshold_quantile": 0.85,
+  "evidence_weight": 10.0,
   "max_flagged_zones": 3,
+  "min_fake_probability_for_explanations": 0.7,
+  "causal_min_drop": 0.03,
+  "beta_for_fusion": "posterior_mean",
+  "research_policy": {
+    "name": "precision_first_v1",
+    "rules": [
+      "No zone flags when classifier label is Real",
+      "No zone flags when P(fake) < min_fake_probability_for_explanations",
+      "Flag only when Q(z) > per-zone calibrated threshold (strict, real q85)",
+      "Live demos: retain claim only if causal occlusion drops P(fake)",
+      "Fusion R(z) uses \u03b2 posterior mean so attention and gradient both contribute"
+    ],
+    "claim_scope": "Flagged zones are high-precision localisation of model anomaly mass. On FF++ masks, flagged-zone precision and pointing-game accuracy are the primary localisation claims \u2014 not that every manipulated pixel is recovered (recall is intentionally low).",
+    "calibration_real_pass_rate_mean": 0.15,
+    "calibration_fake_pass_rate_mean": 0.2743,
+    "per_zone_real_pass_rate": {
+      "left_eye": 0.15,
+      "right_eye": 0.15,
+      "nose_bridge": 0.15,
+      "nose_tip": 0.15,
+      "left_cheek": 0.15,
+      "right_cheek": 0.15,
+      "mouth": 0.15,
+      "forehead": 0.15,
+      "chin_jaw": 0.15
+    },
+    "per_zone_fake_pass_rate": {
+      "left_eye": 0.282,
+      "right_eye": 0.253,
+      "nose_bridge": 0.354,
+      "nose_tip": 0.3445,
+      "left_cheek": 0.219,
+      "right_cheek": 0.221,
+      "mouth": 0.0715,
+      "forehead": 0.391,
+      "chin_jaw": 0.3325
+    }
+  },
   "zone_names": [
     "left_eye",
     "right_eye",
@@ -38,7 +77,7 @@
     "forehead",
     "chin_jaw"
   ],
-  "calibration_n_frames": 924,
-  "calibration_n_fake": 462,
-  "calibration_n_real": 462
+  "calibration_n_frames": 2500,
+  "calibration_n_fake": 2000,
+  "calibration_n_real": 500
 }

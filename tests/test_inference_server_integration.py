@@ -39,8 +39,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.skipif(_SKIP_REASON is not No
 REQUIRED_TOP_LEVEL_FIELDS = {
     "prediction", "confidence", "riskLevel", "processing_time", "model", "mode",
     "terminal_logs", "semantic_explanations", "facial_regions", "timeline",
-    "heatmap", "attention_map", "faceCrop", "confidence_breakdown",
-    "classification_reasoning", "report",
+    "heatmap", "attention_map", "faceCrop", "mask_ground_truth",
+    "confidence_breakdown", "classification_reasoning", "report",
 }
 
 

@@ -50,7 +50,9 @@ CVPR 2020.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+import json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -173,6 +175,8 @@ class ZonePriorModel:
         priors: Dict[str, Dict[str, Tuple[int, int]]] = ZONE_METHOD_PRIORS,
         evidence_weight: float = 3.0,
         unknown_similarity_threshold: float = 0.40,
+        signatures: Optional[Dict[str, Dict[str, float]]] = None,
+        classifier: Optional[Dict] = None,
     ) -> None:
         """
         Args:
@@ -180,11 +184,23 @@ class ZonePriorModel:
                               Defaults to ZONE_METHOD_PRIORS (literature values).
             evidence_weight : w in the Beta-Binomial update.  Higher values
                               give R(z) more influence relative to the prior.
+            signatures      : Optional learned signatures {method: {zone: mean_R}}
+                              (empirical mean R(z) per method, produced by
+                              calibrate_method_signatures.py).  When provided
+                              they replace the literature prior-mean signatures
+                              for method inference; the Beta priors above are
+                              still used for the Q(z) posterior update.
+            classifier      : Optional learned linear (logistic-regression)
+                              classifier dict with keys "classes", "coef",
+                              "intercept", "feature_mean", "feature_std",
+                              "zone_names".  When present it takes precedence
+                              over cosine similarity in infer_method().
         """
         self.priors          = priors
         self.evidence_weight = evidence_weight
         self.unknown_similarity_threshold = unknown_similarity_threshold
         self.methods         = list(priors.keys())
+        self.signature_source = "literature"
 
         # Precompute prior-mean signatures per method for fast inference
         self._signatures: Dict[str, Dict[str, float]] = {}
@@ -193,6 +209,48 @@ class ZonePriorModel:
                 zone: a / (a + b)
                 for zone, (a, b) in zone_params.items()
             }
+
+        if signatures:
+            for method, zone_means in signatures.items():
+                if method in self._signatures:
+                    self._signatures[method] = {
+                        z: float(v) for z, v in zone_means.items()
+                    }
+            self.signature_source = "learned"
+
+        self._classifier: Optional[Dict] = None
+        if classifier:
+            self._classifier = {
+                "classes":      list(classifier["classes"]),
+                "coef":         np.asarray(classifier["coef"], dtype=np.float64),
+                "intercept":    np.asarray(classifier["intercept"], dtype=np.float64),
+                "feature_mean": np.asarray(classifier["feature_mean"], dtype=np.float64),
+                "feature_std":  np.asarray(classifier["feature_std"], dtype=np.float64),
+                "zone_names":   list(classifier.get("zone_names", [])),
+            }
+
+    # ------------------------------------------------------------------
+    @classmethod
+    def from_signature_file(
+        cls,
+        path: Union[str, Path],
+        **kwargs,
+    ) -> "ZonePriorModel":
+        """
+        Build a ZonePriorModel from a learned-signature JSON produced by
+        calibrate_method_signatures.py.  Falls back gracefully: missing
+        "classifier" key means cosine-to-learned-centroids is used.
+        """
+        path = Path(path)
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        model = cls(
+            signatures=data.get("signatures"),
+            classifier=data.get("classifier"),
+            **kwargs,
+        )
+        model.signature_source = str(path)
+        return model
 
     # ------------------------------------------------------------------
     def prior_mean(self, zone: str, method: str) -> float:
@@ -292,6 +350,21 @@ class ZonePriorModel:
             method_probs     : {method: probability} summing to 1.
         """
         R_vec = np.asarray(R_scores, dtype=np.float64)
+
+        # Learned linear classifier takes precedence over cosine similarity.
+        if self._classifier is not None:
+            clf = self._classifier
+            x = (R_vec - clf["feature_mean"]) / np.maximum(clf["feature_std"], 1e-8)
+            logits = clf["coef"] @ x + clf["intercept"]
+            shifted = logits - logits.max()
+            exp_vals = np.exp(shifted)
+            probs = exp_vals / exp_vals.sum()
+            method_probs = {
+                m: round(float(p), 4) for m, p in zip(clf["classes"], probs)
+            }
+            best_method = max(method_probs, key=method_probs.__getitem__)
+            return best_method, method_probs
+
         R_norm = np.linalg.norm(R_vec) + 1e-8
 
         cosine_scores: Dict[str, float] = {}

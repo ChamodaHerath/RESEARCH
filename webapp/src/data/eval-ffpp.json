@@ -1,118 +1,118 @@
 {
   "evaluation_metadata": {
-    "total_frames": 172,
-    "processed_frames": 172,
+    "total_frames": 1000,
+    "processed_frames": 1000,
     "skipped_frames": 0,
-    "elapsed_seconds": 23.8,
-    "fps": 7.23
+    "elapsed_seconds": 587.2,
+    "fps": 1.7
   },
   "classification_metrics": {
-    "accuracy": 0.9942,
-    "auc_roc": 1.0,
-    "average_precision": 1.0,
-    "brier_score": 0.0038,
-    "precision": 1.0,
-    "recall": 0.9884,
-    "f1": 0.9942,
+    "accuracy": 0.481,
+    "auc_roc": 0.6756,
+    "average_precision": 0.902,
+    "brier_score": 0.4686,
+    "precision": 0.9245,
+    "recall": 0.3825,
+    "f1": 0.5411,
     "confusion_matrix": {
-      "tp": 85,
-      "fp": 0,
-      "tn": 86,
-      "fn": 1
+      "tp": 306,
+      "fp": 25,
+      "tn": 175,
+      "fn": 494
     },
-    "ece": 0.0342,
-    "n_total": 172,
-    "n_fake": 86,
-    "n_real": 86,
+    "ece": 0.4771,
+    "n_total": 1000,
+    "n_fake": 800,
+    "n_real": 200,
     "n_skipped": 0
   },
   "explanation_metrics": {
     "faithfulness_pass_rate": 1.0,
-    "mean_flagged_zones_per_fake_frame": 2.965,
+    "mean_flagged_zones_per_fake_frame": 0.165,
     "zone_flag_frequency": {
-      "left_eye": 79,
-      "chin_jaw": 61,
-      "right_eye": 58,
-      "left_cheek": 47,
-      "forehead": 20,
-      "nose_tip": 19,
-      "nose_bridge": 10,
-      "right_cheek": 9
+      "chin_jaw": 77,
+      "nose_bridge": 26,
+      "forehead": 18,
+      "nose_tip": 9,
+      "right_eye": 4,
+      "left_eye": 4,
+      "right_cheek": 4,
+      "left_cheek": 1
     },
     "zone_R_separation": {
       "left_eye": {
-        "fake_mean_R": 0.9718,
-        "real_mean_R": 0.55,
-        "separation": 0.4218,
-        "flag_count": 79
+        "fake_mean_R": 0.5539,
+        "real_mean_R": 0.4709,
+        "separation": 0.083,
+        "flag_count": 4
       },
       "right_eye": {
-        "fake_mean_R": 0.8464,
-        "real_mean_R": 0.5962,
-        "separation": 0.2503,
-        "flag_count": 58
+        "fake_mean_R": 0.5347,
+        "real_mean_R": 0.4281,
+        "separation": 0.1065,
+        "flag_count": 4
       },
       "nose_bridge": {
-        "fake_mean_R": 0.9146,
-        "real_mean_R": 0.4962,
-        "separation": 0.4185,
-        "flag_count": 10
+        "fake_mean_R": 0.6336,
+        "real_mean_R": 0.4908,
+        "separation": 0.1428,
+        "flag_count": 26
       },
       "nose_tip": {
-        "fake_mean_R": 0.9896,
-        "real_mean_R": 0.6548,
-        "separation": 0.3348,
-        "flag_count": 19
-      },
-      "left_cheek": {
-        "fake_mean_R": 0.7823,
-        "real_mean_R": 0.5191,
-        "separation": 0.2631,
-        "flag_count": 47
-      },
-      "right_cheek": {
-        "fake_mean_R": 0.631,
-        "real_mean_R": 0.4848,
-        "separation": 0.1463,
+        "fake_mean_R": 0.6104,
+        "real_mean_R": 0.4882,
+        "separation": 0.1222,
         "flag_count": 9
       },
+      "left_cheek": {
+        "fake_mean_R": 0.5112,
+        "real_mean_R": 0.4687,
+        "separation": 0.0424,
+        "flag_count": 1
+      },
+      "right_cheek": {
+        "fake_mean_R": 0.5514,
+        "real_mean_R": 0.4845,
+        "separation": 0.0668,
+        "flag_count": 4
+      },
       "mouth": {
-        "fake_mean_R": 0.4298,
-        "real_mean_R": 0.5796,
-        "separation": -0.1498,
+        "fake_mean_R": 0.4076,
+        "real_mean_R": 0.4329,
+        "separation": -0.0253,
         "flag_count": 0
       },
       "forehead": {
-        "fake_mean_R": 0.9784,
-        "real_mean_R": 0.6488,
-        "separation": 0.3296,
-        "flag_count": 20
+        "fake_mean_R": 0.5878,
+        "real_mean_R": 0.4898,
+        "separation": 0.098,
+        "flag_count": 18
       },
       "chin_jaw": {
-        "fake_mean_R": 0.9679,
-        "real_mean_R": 0.5539,
-        "separation": 0.414,
-        "flag_count": 61
+        "fake_mean_R": 0.6057,
+        "real_mean_R": 0.4864,
+        "separation": 0.1193,
+        "flag_count": 77
       }
     }
   },
   "bayesian_metrics": {
     "beta_posterior": {
-      "map": 1.0,
-      "mean": 0.917,
-      "std": 0.0723,
-      "ci_lower": 0.7327,
-      "ci_upper": 0.998
+      "map": 0.9329,
+      "mean": 0.8685,
+      "std": 0.0908,
+      "ci_lower": 0.6597,
+      "ci_upper": 0.994
     },
     "mean_CI_width_per_zone": {
-      "right_eye": 0.0129,
-      "left_eye": 0.0149,
-      "chin_jaw": 0.0217,
-      "left_cheek": 0.0231,
-      "forehead": 0.018,
-      "nose_bridge": 0.0166,
-      "nose_tip": 0.0176,
-      "right_cheek": 0.0417
+      "chin_jaw": 0.0562,
+      "right_eye": 0.0328,
+      "left_eye": 0.027,
+      "nose_tip": 0.0519,
+      "nose_bridge": 0.0235,
+      "left_cheek": 0.0993,
+      "forehead": 0.0345,
+      "right_cheek": 0.1033
     },
     "note": "CI width = R_ci_upper - R_ci_lower per zone per frame, averaged across all frames where a zone was flagged. Narrower = more certain."
   }

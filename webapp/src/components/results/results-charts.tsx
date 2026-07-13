@@ -61,7 +61,7 @@ export function ResultsCharts() {
       <SectionHeading
         eyebrow="Real Evaluation Charts"
         title="Classification accuracy & zone-level separation"
-        description="Sourced directly from evaluate_pipeline.py output files. The detector (hamzenium/ViT-Deepfake-Classifier) was selected via a systematic benchmark tournament — see README.md — and its cross-dataset accuracy (Celeb-DF) is honestly lower than its in-domain accuracy (FF++), which is reported as-is rather than smoothed over."
+        description="Sourced directly from evaluate_pipeline.py output files. The detector is currently set to hamzenium/ViT-Deepfake-Classifier at the user's request; its in-domain and cross-dataset scores are reported exactly as measured, without smoothing or replacement."
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <GlassCard className="flex flex-col gap-4 p-6">

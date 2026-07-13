@@ -1,12 +1,12 @@
 {
-  "beta": 1.0,
+  "beta": 0.9329,
   "model_name": "hamzenium/ViT-Deepfake-Classifier",
   "beta_posterior": {
-    "map": 1.0,
-    "mean": 0.917,
-    "std": 0.0723,
-    "ci_lower": 0.7327,
-    "ci_upper": 0.998
+    "map": 0.9329,
+    "mean": 0.8685,
+    "std": 0.0908,
+    "ci_lower": 0.6597,
+    "ci_upper": 0.994
   },
   "severity_thresholds": {
     "high": 0.75,
@@ -14,65 +14,105 @@
     "low": 0.25
   },
   "zone_thresholds": {
-    "left_eye": 0.6912749767303467,
-    "right_eye": 0.6875300168991089,
-    "nose_bridge": 0.4631699904799461,
-    "nose_tip": 0.48743499815464014,
-    "left_cheek": 0.7122800022363662,
-    "right_cheek": 0.7137950122356415,
-    "mouth": 0.8002550005912781,
-    "forehead": 0.5909199774265289,
-    "chin_jaw": 0.6562800079584121
+    "left_eye": 0.6417600512504578,
+    "right_eye": 0.6565850973129272,
+    "nose_bridge": 0.47173503041267395,
+    "nose_tip": 0.5228150486946106,
+    "left_cheek": 0.6923150420188904,
+    "right_cheek": 0.6754800081253052,
+    "mouth": 0.7322400808334351,
+    "forehead": 0.5328501462936401,
+    "chin_jaw": 0.6613200306892395
   },
   "zone_thresholds_scale": "Q(z)_marginal_posterior",
-  "zone_threshold_quantile": 0.95,
+  "zone_threshold_quantile": 0.85,
+  "evidence_weight": 10.0,
+  "threshold_ceiling_margin": 0.05,
   "max_flagged_zones": 3,
+  "min_fake_probability_for_explanations": 0.7,
+  "causal_min_drop": 0.03,
+  "beta_for_fusion": "posterior_mean",
+  "research_policy": {
+    "name": "precision_first_v1",
+    "rules": [
+      "No zone flags when classifier label is Real",
+      "No zone flags when P(fake) < min_fake_probability_for_explanations",
+      "Flag only when Q(z) > per-zone calibrated threshold (strict, real q85)",
+      "Live demos: retain claim only if causal occlusion drops P(fake)",
+      "Fusion R(z) uses \u03b2 posterior mean so attention and gradient both contribute"
+    ],
+    "claim_scope": "Flagged zones are high-precision localisation of model anomaly mass. On FF++ masks, flagged-zone precision and pointing-game accuracy are the primary localisation claims \u2014 not that every manipulated pixel is recovered (recall is intentionally low).",
+    "calibration_real_pass_rate_mean": 0.15,
+    "calibration_fake_pass_rate_mean": 0.2743,
+    "per_zone_real_pass_rate": {
+      "left_eye": 0.15,
+      "right_eye": 0.15,
+      "nose_bridge": 0.15,
+      "nose_tip": 0.15,
+      "left_cheek": 0.15,
+      "right_cheek": 0.15,
+      "mouth": 0.15,
+      "forehead": 0.15,
+      "chin_jaw": 0.15
+    },
+    "per_zone_fake_pass_rate": {
+      "left_eye": 0.282,
+      "right_eye": 0.253,
+      "nose_bridge": 0.354,
+      "nose_tip": 0.3445,
+      "left_cheek": 0.219,
+      "right_cheek": 0.221,
+      "mouth": 0.0715,
+      "forehead": 0.391,
+      "chin_jaw": 0.3325
+    }
+  },
   "A_stats": {
     "mean": [
-      0.032283056527376175,
-      0.03407574072480202,
-      0.04754849150776863,
-      0.07619453966617584,
-      0.04245366156101227,
-      0.07229194045066833,
-      0.11529957503080368,
-      0.030284537002444267,
-      0.06262657791376114
+      0.037507638335227966,
+      0.043311119079589844,
+      0.04489842429757118,
+      0.06551716476678848,
+      0.048803046345710754,
+      0.06379783898591995,
+      0.11697640269994736,
+      0.05348560959100723,
+      0.0638277605175972
     ],
     "std": [
-      0.02363748475909233,
-      0.024681301787495613,
-      0.03541271761059761,
-      0.046399980783462524,
-      0.026274139061570168,
-      0.04679478332400322,
-      0.09271696209907532,
-      0.01795591600239277,
-      0.02440919727087021
+      0.029836514964699745,
+      0.03322568163275719,
+      0.06403254717588425,
+      0.046821001917123795,
+      0.034247759729623795,
+      0.042654287070035934,
+      0.06961093842983246,
+      0.07080303132534027,
+      0.023424088954925537
     ]
   },
   "S_stats": {
     "mean": [
-      0.11227377504110336,
-      0.1047842726111412,
-      0.13672465085983276,
-      0.18321393430233002,
-      0.09666939824819565,
-      0.12718577682971954,
-      0.21633270382881165,
-      0.11066397279500961,
-      0.1378335803747177
+      0.09483230113983154,
+      0.09739701449871063,
+      0.11502975970506668,
+      0.13959024846553802,
+      0.09567799419164658,
+      0.11408200860023499,
+      0.1924692839384079,
+      0.13251955807209015,
+      0.12765522301197052
     ],
     "std": [
-      0.0689050555229187,
-      0.061902325600385666,
-      0.10476765036582947,
-      0.10111454874277115,
-      0.052193496376276016,
-      0.07174476236104965,
-      0.14216341078281403,
-      0.05475306510925293,
-      0.04793670028448105
+      0.06699211150407791,
+      0.059847548604011536,
+      0.09516240656375885,
+      0.07843766361474991,
+      0.05757245793938637,
+      0.06787154823541641,
+      0.12111327052116394,
+      0.0802212506532669,
+      0.05381711199879646
     ]
   },
   "zone_names": [
@@ -88,60 +128,60 @@
   ],
   "artifact_posteriors": {
     "mouth": [
-      98.0,
-      96.0,
-      95.0,
-      94.0,
-      94.0
+      405.0,
+      404.0,
+      403.0,
+      402.0,
+      401.0
     ],
     "left_eye": [
-      98.0,
-      96.0,
-      95.0,
-      94.0,
-      94.0
+      405.0,
+      404.0,
+      403.0,
+      402.0,
+      401.0
     ],
     "right_eye": [
-      98.0,
-      96.0,
-      95.0,
-      94.0,
-      94.0
+      405.0,
+      404.0,
+      403.0,
+      402.0,
+      401.0
     ],
     "nose_bridge": [
-      157.0,
-      156.0,
-      155.0
+      670.0,
+      668.0,
+      668.0
     ],
     "nose_tip": [
-      157.0,
-      156.0,
-      155.0
+      670.0,
+      668.0,
+      668.0
     ],
     "left_cheek": [
-      120.0,
-      118.0,
-      117.0,
-      117.0
+      504.0,
+      503.0,
+      502.0,
+      501.0
     ],
     "right_cheek": [
-      120.0,
-      118.0,
-      117.0,
-      117.0
+      504.0,
+      503.0,
+      502.0,
+      501.0
     ],
     "forehead": [
-      157.0,
-      156.0,
-      155.0
+      670.0,
+      668.0,
+      668.0
     ],
     "chin_jaw": [
-      157.0,
-      156.0,
-      155.0
+      670.0,
+      668.0,
+      668.0
     ]
   },
-  "calibration_n_frames": 924,
-  "calibration_n_fake": 462,
-  "calibration_n_real": 462
+  "calibration_n_frames": 2500,
+  "calibration_n_fake": 2000,
+  "calibration_n_real": 500
 }

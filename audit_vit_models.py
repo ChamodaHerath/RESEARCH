@@ -22,10 +22,10 @@ import torch
 
 
 DEFAULT_MODELS = [
+    "hamzenium/ViT-Deepfake-Classifier",
     "prithivMLmods/Deep-Fake-Detector-v2-Model",
     "prithivMLmods/Deepfake-Detection-Exp-02-21",
     "dima806/deepfake_vs_real_image_detection",
-    "hamzenium/ViT-Deepfake-Classifier",
     "buildborderless/CommunityForensics-DeepfakeDet-ViT",
 ]
 

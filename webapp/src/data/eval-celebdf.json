@@ -3,8 +3,8 @@
     "total_frames": 5179,
     "processed_frames": 5179,
     "skipped_frames": 0,
-    "elapsed_seconds": 430.5,
-    "fps": 12.03
+    "elapsed_seconds": 2428.8,
+    "fps": 2.13
   },
   "classification_metrics": {
     "accuracy": 0.7913,

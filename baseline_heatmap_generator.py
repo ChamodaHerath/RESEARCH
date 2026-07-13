@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--model-name",
         type=str,
         default=DEFAULT_HF_DEEPFAKE_MODEL,
-        help="Model id/name. Supports Hugging Face ids (e.g. prithivMLmods/Deep-Fake-Detector-v2-Model) or timm ViT names.",
+        help="Model id/name. Supports Hugging Face ids (e.g. hamzenium/ViT-Deepfake-Classifier) or timm ViT names.",
     )
     parser.add_argument(
         "--alpha",

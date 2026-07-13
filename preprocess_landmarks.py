@@ -15,6 +15,7 @@ import cv2
 import dlib
 import numpy as np
 from mtcnn import MTCNN
+from landmark_io import save_landmark_json
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +324,11 @@ def _build_frame_entry(
 
     NEW: zone_patch_matrix M is computed here and stored as a nested list
     so downstream modules can load it directly without recomputing.
+
+    NEW: crop_box records the MTCNN face box (with margin) in *source frame*
+    coordinates. Downstream mask-based ground-truth evaluation
+    (evaluate_zone_localization.py) needs it to crop the FF++ manipulation
+    mask with exactly the same geometry as the face image.
     """
     M = compute_zone_patch_matrix(scaled)
 
@@ -335,6 +341,8 @@ def _build_frame_entry(
         # NEW: serialised zone-patch matrix for downstream modules
         "zone_patch_matrix": M.tolist(),   # shape (196, 9) as nested list
         "zone_names": ZONE_NAMES,
+        # NEW: face crop box [x1, y1, x2, y2] in source-frame pixel coords
+        "crop_box": [int(face.x1), int(face.y1), int(face.x2), int(face.y2)],
     }
 
 
@@ -468,14 +476,67 @@ def process_ffpp_videos(
     save_debug: bool,
     debug_dir: Path,
     resume_from_outputs: bool,
+    method_dir_names: Optional[List[str]] = None,
+    official_splits_dir: Optional[Path] = None,
+    split_name: Optional[str] = None,
+    max_videos: Optional[int] = None,
 ) -> None:
-    """Process FaceForensics++ videos (Deepfakes + original) with resume support."""
-    deepfakes_dir = ffpp_root / "Deepfakes"
-    original_dir = ffpp_root / "original"
-    if not deepfakes_dir.exists() or not original_dir.exists():
-        raise FileNotFoundError(f"Expected 'Deepfakes' and 'original' under: {ffpp_root}")
+    """
+    Process FaceForensics++ videos with resume support.
 
-    label_dirs = {"fake": deepfakes_dir, "real": original_dir}
+    Scans manipulation-method directories under ffpp_root plus 'original'.
+    Use --official-splits + --split to process only the standard FF++
+    train/val/test partition (140 test pairs = ~560 fake + ~280 real videos
+    across 4 methods) instead of all ~7000 videos on disk.
+    """
+    core_methods = ["Deepfakes", "Face2Face", "FaceSwap", "NeuralTextures"]
+    extra_methods = ["FaceShifter", "DeepFakeDetection"]
+    if method_dir_names is None:
+        method_dir_names = core_methods
+    original_dir = ffpp_root / "original"
+
+    fake_dirs = {name: ffpp_root / name for name in method_dir_names
+                 if (ffpp_root / name).exists()}
+    missing = [m for m in method_dir_names if m not in fake_dirs]
+    if missing:
+        logging.warning("Requested methods not found on disk (skipped): %s", missing)
+    if not fake_dirs or not original_dir.exists():
+        raise FileNotFoundError(
+            f"Expected 'original' plus at least one manipulation folder under: {ffpp_root}. "
+            f"Looked for: {method_dir_names}"
+        )
+    logging.info("FF++ manipulation methods to process: %s", ", ".join(fake_dirs))
+
+    split_filter = None
+    if split_name is not None and split_name != "all":
+        if official_splits_dir is None:
+            raise ValueError(
+                f"--split {split_name} requires --official-splits DIR "
+                "(run: python download_ffpp_splits.py)"
+            )
+        from ffpp_utils import load_official_splits_dir
+
+        all_splits = load_official_splits_dir(official_splits_dir)
+        if split_name not in all_splits:
+            raise ValueError(
+                f"Split '{split_name}' not in {official_splits_dir}. "
+                f"Available: {sorted(all_splits)}"
+            )
+        split_filter = all_splits[split_name]
+        logging.info(
+            "Split filter: %s (%d video pairs, %d unique ids)",
+            split_name, len(split_filter[0]), len(split_filter[1]),
+        )
+    elif official_splits_dir is not None:
+        logging.info(
+            "No --split given: processing ALL videos on disk (not split-filtered). "
+            "Add --split test|val|train to limit scope."
+        )
+
+    # label -> (root_dir, method_name_or_None)
+    label_dirs: List[Tuple[str, Path, Optional[str]]] = [
+        ("fake", d, name) for name, d in fake_dirs.items()
+    ] + [("real", original_dir, None)]
     predictor = dlib.shape_predictor(str(predictor_path))
     detector = MTCNN()
 
@@ -496,12 +557,28 @@ def process_ffpp_videos(
         except Exception as exc:
             logging.warning("Could not load existing JSON (%s). Starting fresh.", exc)
 
-    for label, root_dir in label_dirs.items():
+    n_skipped_split = 0
+    n_processed_videos = 0
+
+    for label, root_dir, method in label_dirs:
         videos = collect_video_paths(root_dir)
-        logging.info("[%s] Found %d videos in %s", label, len(videos), root_dir)
+        logging.info("[%s%s] Found %d videos in %s",
+                     label, f"/{method}" if method else "", len(videos), root_dir)
 
         for video_path in videos:
             video_key = video_path.relative_to(ffpp_root).as_posix()
+
+            if split_filter is not None:
+                from ffpp_utils import video_in_official_split
+                pairs, ids = split_filter
+                if not video_in_official_split(video_key, pairs, ids):
+                    n_skipped_split += 1
+                    continue
+
+            if max_videos is not None and n_processed_videos >= max_videos:
+                logging.info("Reached --max-videos %d, stopping.", max_videos)
+                break
+
             if video_key in video_stats:
                 logging.info("Skipping already processed: %s", video_key)
                 continue
@@ -509,8 +586,9 @@ def process_ffpp_videos(
             frames = extract_frames_from_video(video_path, sample_every=sample_every)
             processed_count = skipped_count = 0
             video_stem = sanitize_stem(video_path.stem)
-            out_video_faces = faces_out_dir / label / video_stem
-            out_video_debug = debug_dir / label / video_stem
+            sub_dir = f"{label}/{method}" if method else label
+            out_video_faces = faces_out_dir / sub_dir / video_stem
+            out_video_debug = debug_dir / sub_dir / video_stem
 
             for frame_idx, frame_bgr in frames:
                 frame_name = f"{video_stem}_f{frame_idx:06d}.jpg"
@@ -529,15 +607,22 @@ def process_ffpp_videos(
                 entry["video_path"] = video_key
                 entry["frame_index"] = frame_idx
                 entry["label"] = label
+                if method is not None:
+                    entry["method"] = method
                 output[frame_key] = entry
                 processed_count += 1
 
             video_stats[video_key] = {
                 "label": label,
+                **({"method": method} if method is not None else {}),
                 "sampled_frames": len(frames),
                 "processed_frames": processed_count,
                 "skipped_frames": skipped_count,
             }
+            n_processed_videos += 1
+
+        if max_videos is not None and n_processed_videos >= max_videos:
+            break
 
     final_json = {
         "meta": {
@@ -551,7 +636,13 @@ def process_ffpp_videos(
             "semantic_groups_indices": SEMANTIC_GROUPS,
             "zone_names": ZONE_NAMES,
             "zone_patch_matrix_shape": [NUM_PATCHES, NUM_ZONES],
-            "labels": {"fake": "Deepfakes", "real": "original"},
+            "labels": {"fake": sorted(fake_dirs), "real": "original"},
+            **({"split": split_name} if split_name else {}),
+            **({"official_splits_dir": str(official_splits_dir)} if official_splits_dir else {}),
+            **({"videos_skipped_by_split_filter": n_skipped_split} if split_filter else {}),
+            "extra_methods_available_not_processed": [
+                m for m in extra_methods if (ffpp_root / m).exists() and m not in fake_dirs
+            ],
         },
         "videos": video_stats,
         "frames": output,
@@ -559,12 +650,12 @@ def process_ffpp_videos(
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as f:
-        json.dump(final_json, f, indent=2)
+    save_landmark_json(output_json, final_json, compact=True)
 
     logging.info("Saved JSON: %s", output_json)
-    logging.info("Processed: %d frames | Skipped: %d | Videos: %d",
-                 len(output), len(skipped_set), len(video_stats))
+    logging.info("Processed: %d frames | Skipped: %d | Videos: %d%s",
+                 len(output), len(skipped_set), len(video_stats),
+                 f" | Split-filter skipped: {n_skipped_split}" if split_filter else "")
 
 
 def process_celebdf_videos(
@@ -690,8 +781,7 @@ def process_celebdf_videos(
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as f:
-        json.dump(final_json, f, indent=2)
+    save_landmark_json(output_json, final_json, compact=True)
 
     logging.info("Saved JSON: %s", output_json)
     logging.info("Processed: %d frames | Skipped: %d | Videos: %d",
@@ -717,6 +807,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--margin-ratio", type=float, default=0.1)
     parser.add_argument("--target-size", type=int, default=IMAGE_SIZE)
     parser.add_argument("--sample-every", type=int, default=10)
+    parser.add_argument("--official-splits", type=Path, default=None,
+                        help="Directory with FF++ train.json/val.json/test.json "
+                             "(run download_ffpp_splits.py first).")
+    parser.add_argument("--split", type=str, default=None,
+                        choices=["train", "val", "test", "all"],
+                        help="Process only videos in this FF++ split (requires --official-splits). "
+                             "Use 'test' for the standard 140-pair evaluation set (~840 videos, 4 methods). "
+                             "Omit or use 'all' to process every video on disk (~7000).")
+    parser.add_argument("--methods", type=str, nargs="+", default=None,
+                        help="Manipulation folders to process (default: Deepfakes Face2Face "
+                             "FaceSwap NeuralTextures). Add FaceShifter DeepFakeDetection if needed.")
+    parser.add_argument("--max-videos", type=int, default=None,
+                        help="Stop after processing N videos (smoke test).")
     parser.add_argument("--resume-from-outputs", action="store_true")
     parser.add_argument("--workers", type=int, default=max(1, mp.cpu_count() - 1))
     parser.add_argument("--save-debug", action="store_true",
@@ -762,6 +865,9 @@ def main() -> None:
             )
         else:
             # FaceForensics++ mode
+            split_name = None if args.split is None else args.split
+            if split_name == "all":
+                split_name = None
             process_ffpp_videos(
                 ffpp_root=args.ffpp_root,
                 predictor_path=args.predictor_path,
@@ -773,6 +879,10 @@ def main() -> None:
                 save_debug=args.save_debug,
                 debug_dir=args.debug_dir,
                 resume_from_outputs=args.resume_from_outputs,
+                method_dir_names=args.methods,
+                official_splits_dir=args.official_splits,
+                split_name=split_name,
+                max_videos=args.max_videos,
             )
         return
 
@@ -816,11 +926,10 @@ def main() -> None:
         "skipped_frames": sorted(skipped),
     }
 
-    args.output_json.parent.mkdir(parents=True, exist_ok=True)
-    with args.output_json.open("w", encoding="utf-8") as f:
-        json.dump(final_json, f, indent=2)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    save_landmark_json(output_json, final_json, compact=True)
 
-    logging.info("Saved JSON: %s", args.output_json)
+    logging.info("Saved JSON: %s", output_json)
     logging.info("Processed: %d | Skipped: %d", len(output), len(skipped))
 
 

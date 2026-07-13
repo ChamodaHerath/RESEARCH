@@ -1,45 +1,213 @@
 preprocess_deepfakes
 
 
-app
-& "c:\PROJECTS\RESEARCH - Copy\venv\Scripts\python.exe" inference_server.py --port 8000
+
+# =============================================================================
+
+# FF++ DATASET — you have the FULL dataset (~5000 videos for 4 core methods)
+
+# The old "172 frames" was a tiny Deepfakes-only smoke-test subset, NOT a limit.
+
+# =============================================================================
+
+
+
+# Step 0 — Download official train/val/test split files (once)
+
+cd "c:\PROJECTS\RESEARCH - Copy"
+
+.\venv\Scripts\python.exe download_ffpp_splits.py --output-dir "datasets\FaceForensics++\splits"
+
+
+
+# Step 1a — RECOMMENDED: preprocess the official TEST split only (~700 videos)
+
+#   560 fake (4 methods × 140) + 140 originals → ~5k–15k frames at sample-every 10
+
+.\venv\Scripts\python.exe preprocess_landmarks.py `
+
+  --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
+
+  --official-splits "datasets/FaceForensics++/splits" `
+
+  --split test `
+
+  --output-json "outputs/ffpp_landmarks_test.json" `
+
+  --faces-out-dir "outputs/faces_224" `
+
+  --predictor-path "shape_predictor_68_face_landmarks.dat" `
+
+  --sample-every 10 `
+
+  --resume-from-outputs `
+
+  --verbose
+
+
+
+# Step 1b — preprocess ALL 5000 videos (4 methods + original) — takes many hours
+
+# .\venv\Scripts\python.exe preprocess_landmarks.py `
+
+#   --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
+
+#   --output-json "outputs/ffpp_landmarks_full.json" `
+
+#   --faces-out-dir "outputs/faces_224" `
+
+#   --sample-every 10 `
+
+#   --resume-from-outputs --verbose
+
+
+
+# Step 1c — preprocess TRAIN split for detector fine-tuning (~3600 videos)
+
+# .\venv\Scripts\python.exe preprocess_landmarks.py `
+
+#   --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
+
+#   --official-splits "datasets/FaceForensics++/splits" `
+
+#   --split train `
+
+#   --output-json "outputs/ffpp_landmarks_train.json" `
+
+#   --faces-out-dir "outputs/faces_224" `
+
+#   --sample-every 10 --resume-from-outputs --verbose
+
+
+
+# Step 2 — Leakage-controlled splits (if you preprocessed everything into one JSON)
+
+# python make_ffpp_splits.py --json outputs/ffpp_landmarks_full.json --official-splits datasets/FaceForensics++/splits
+
+
+
+# Step 1d — preprocess VAL split (calibration split for learned method signatures)
 
 .\venv\Scripts\python.exe preprocess_landmarks.py `
   --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" `
-  --output-json "outputs/ffpp_landmarks.json" `
+  --official-splits "datasets/FaceForensics++/splits" `
+  --split val `
+  --output-json "outputs/ffpp_landmarks_val.json" `
   --faces-out-dir "outputs/faces_224" `
-  --predictor-path "shape_predictor_68_face_landmarks.dat" `
-  --sample-every 10 `
-  --save-debug `
-  --debug-dir "outputs/debug_landmarks" `
-  --resume-from-outputs `
-  --verbose
+  --sample-every 10 --resume-from-outputs --verbose
+
+
+
+# Step 2b — Learn method signatures from the VAL split (never test!)
+#   Writes configs/method_signatures.json — auto-loaded by the pipeline.
+#   --fit-classifier adds a logistic regression (usually beats cosine).
+
+.\venv\Scripts\python.exe calibrate_method_signatures.py `
+  --json outputs/ffpp_landmarks_val.json `
+  --fit-classifier `
+  --max-frames-per-method 1000
+
+
+
+# Step 3 — Method inference (learned signatures) — DONE
+#   outputs/method_inference_ffpp.json  (36.64% frame accuracy)
+
+.\venv\Scripts\python.exe evaluate_method_inference.py `
+  --json outputs/ffpp_landmarks_test_full.json `
+  --output outputs/method_inference_ffpp.json
+
+
+
+# Step 4 — FF++ manipulation MASK videos — DONE
+#   datasets/FaceForensics++/masks/  (1000 mask mp4s × 4 methods)
+
+
+
+# Step 5 — Full pipeline evaluation (classification + explanations + video-level CIs)
+
+.\venv\Scripts\python.exe evaluate_pipeline.py `
+  --json outputs/ffpp_landmarks_test_full.json `
+  --output outputs/evaluation_results_ffpp.json
+
+# Step 6 — Zone localization vs FF++ mask ground truth (+ deletion/insertion on 200 frames)
+
+.\venv\Scripts\python.exe evaluate_zone_localization.py `
+  --json outputs/ffpp_landmarks_test_full.json `
+  --masks-root "datasets/FaceForensics++/masks" `
+  --output outputs/zone_localization_ffpp.json
+
+# Step 7 — Refresh webapp metrics from real outputs
+
+.\venv\Scripts\python.exe sync_webapp_data.py
+
+
+
+# =============================================================================
+
+
+
+app
+
+cd "c:\PROJECTS\RESEARCH - Copy\webapp"
+npm run dev
+
+cd "c:\PROJECTS\RESEARCH - Copy"
+.\venv\Scripts\Activate.ps1
+.\venv\Scripts\python.exe inference_server.py --port 8000
+
+-------------------------------------------------------------------------------------------
+
 
   get heatmap
 
+
+
   image
+
+
 
   .\venv\Scripts\python.exe baseline_heatmap_generator.py --image "C:\PROJECTS\RESEARCH - Copy\inputs\1.jpg"
 
 
+
+
+
   video
+
  
+
   .\venv\Scripts\python.exe baseline_heatmap_generator.py --video "C:\PROJECTS\RESEARCH - Copy\inputs\v1.mp4" --num-frames 4 --output "outputs\v1_grid.jpg"
+
+
+
 
 
   Step 1 — Quick smoke test (one frame, full dual-head report)
 
+
+
   cd "c:\PROJECTS\RESEARCH - Copy"
+
 python run_pipeline_single_frame.py --json outputs/ffpp_landmarks_test.json --key "Deepfakes/000_003.mp4::f000000" --output outputs/report_demo.json
 
-Full batch evaluation (all 172 test frames, classification + explanation metrics)
-
-python evaluate_pipeline.py --json outputs/ffpp_landmarks_test.json --output outputs/evaluation_results.json
 
 
+Step 3 — Research-grade recalibration (precision-first semantic policy)
 
-Step 3 — Run the calibration again (optional, generates updated fusion_config.json)
-python recalibrate_v2.py
+.\venv\Scripts\python.exe recalibrate_v2.py `
+  --json outputs/ffpp_landmarks_cal.json `
+  --zone-threshold-quantile 0.85 `
+  --evidence-weight 10 `
+  --threshold-ceiling-margin 0.03 `
+  --min-fake-probability 0.70 `
+  --causal-min-drop 0.03 `
+  --max-flagged-zones 3 `
+  --output configs/fusion_config.json
+
+.\venv\Scripts\python.exe sync_webapp_data.py
+
+
+
 
 
 
@@ -47,17 +215,31 @@ python recalibrate_v2.py
 
 
 For a single image
+
 cd "c:\PROJECTS\RESEARCH - Copy"
+
 .\venv\Scripts\python.exe analyze.py --input path\to\face.jpg
+
 Save the report to JSON too:
 
+
+
 .\venv\Scripts\python.exe analyze.py --input path\to\face.jpg --output outputs\report.json
+
 For a video (every frame)
+
 .\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4
+
 Video with compact per-frame log + final aggregate (quieter):
 
+
+
 .\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4 --quiet
+
 Video — only every 5th frame (much faster for long clips):
+
+
+
 
 
 .\venv\Scripts\python.exe analyze.py --input path\to\clip.mp4 --frame-step 5 --output outputs\video_report.js

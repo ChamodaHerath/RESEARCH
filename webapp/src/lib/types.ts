@@ -43,12 +43,26 @@ export interface SemanticExplanation {
   severity: "low" | "medium" | "high";
   /** Theoretical basis for why this zone/artifact was flagged — from live pipeline. */
   theory?: ExplanationTheory;
+  /** P(fake) drop when this zone is occluded (causal gate). */
+  causal_drop?: number | null;
 }
 
 export interface FacialRegionScore {
-  region: "forehead" | "eyes" | "nose" | "mouth" | "jaw";
+  /** Stable zone id (9 SAEDF zones, or legacy 5-region aggregate). */
+  region: string;
   anomalyScore: number;
   label: string;
+  /** True when this zone crossed the calibrated flagging threshold. */
+  flagged?: boolean;
+  /** How the zone was selected: calibrated_threshold when score > thr. */
+  flag_reason?: string | null;
+  /** Optional fused R(z) alongside Q(z)/display score. */
+  R?: number;
+  Q?: number;
+  /** Calibrated flagging threshold for this zone. */
+  threshold?: number;
+  /** True when score > threshold under Fake+confidence gate (may still fail causal). */
+  clears_threshold?: boolean;
 }
 
 export interface TimelineMarker {
@@ -61,6 +75,53 @@ export interface TimelineMarker {
 export interface ConfidenceBreakdown {
   metric: string;
   value: number;
+}
+
+export interface ExplanationValidationClaim {
+  zone: string;
+  artifact_type: string;
+  faithfulness_passed: boolean;
+  causal_drop: number | null;
+  causal_passed: boolean | null;
+}
+
+export interface ExplanationValidationLive {
+  n_claims: number;
+  faithfulness_passed_count: number;
+  faithfulness_pass_rate: number;
+  causal_gate_enabled: boolean;
+  causal_min_drop: number | null;
+  causal_zones_tested: number;
+  causal_claims_retained: number;
+  causal_retention_rate: number | null;
+  per_claim: ExplanationValidationClaim[];
+  note: string;
+}
+
+export interface MaskGroundTruthValidation {
+  dataset: string;
+  n_frames_evaluated?: number | null;
+  precision?: number | null;
+  pointing_game_accuracy?: number | null;
+  zone_score_auc_micro?: number | null;
+  scope_note: string;
+}
+
+export interface ExplanationValidation {
+  live: ExplanationValidationLive;
+  mask_ground_truth_validation: MaskGroundTruthValidation | null;
+  novel_contribution_note: string;
+}
+
+/** Live FF++ manipulation-mask overlay when the upload matches a local mask clip. */
+export interface MaskGroundTruthVisual {
+  available: boolean;
+  /** Face crop with green GT manipulation mask overlay (base64 data URL). */
+  overlay: string;
+  mask_coverage: number;
+  frame_index: number;
+  mask_source: string;
+  note: string;
 }
 
 export interface DetectionResponse {
@@ -78,9 +139,16 @@ export interface DetectionResponse {
   attention_map: string;
   /** Real 224x224 aligned face crop actually fed to the ViT (before overlay). */
   faceCrop: string;
+  /**
+   * Present when the uploaded file matches a local FaceForensics++ mask video.
+   * Green overlay = true edited pixels (dataset GT), not model attention.
+   */
+  mask_ground_truth?: MaskGroundTruthVisual | null;
   confidence_breakdown: ConfidenceBreakdown[];
   /** Step-by-step theoretical basis for the Real/Fake verdict. */
   classification_reasoning: ClassificationReasoning;
+  /** Live faithfulness/causal checks + offline FF++ mask-GT research metrics. */
+  explanation_validation?: ExplanationValidation;
   report: {
     caseId: string;
     date: string;

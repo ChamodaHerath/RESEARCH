@@ -12,7 +12,9 @@ explanation head (zone-level attribution) into a single class that:
   3. Passes all signals through the calibrated fusion pipeline
      (SemanticExplanationGenerator loads beta, population stats, and
      Dirichlet artifact priors from configs/fusion_config.json).
-  4. Returns a ForensicReport containing both heads.
+  4. Causal correctness gate: occlude each flagged zone and keep only
+     NL claims that reduce P(fake) by at least ``causal_min_drop``.
+  5. Returns a ForensicReport containing both heads.
 
 Usage
 -----
@@ -42,8 +44,37 @@ from semantic_patch_mapper import (
     ExplanationOutput,
     ForensicReport,
     SemanticExplanationGenerator,
+    filter_explanations_by_causal_correctness,
     load_fusion_config,
 )
+
+
+def classifier_fake_probabilities(
+    extractor: AttentionExtractor,
+    images_bgr: List[np.ndarray],
+) -> List[float]:
+    """
+    Classifier-only forward pass used by the causal correctness gate.
+
+    Returns P(fake) for each 224×224 BGR image without running the explanation
+    head. Kept here so pipeline.py and inference_server.py share one path.
+    """
+    import torch
+
+    if not images_bgr:
+        return []
+    batch = np.stack([img.astype(np.uint8) for img in images_bgr], axis=0)
+    model_input = extractor.preprocess_bgr_images_for_model(batch).to(extractor.device)
+    with torch.no_grad():
+        out = extractor.model(model_input)
+    logits = out.logits if hasattr(out, "logits") else out
+    probs = torch.softmax(logits, dim=-1)
+    num_classes = int(logits.shape[-1])
+    if getattr(extractor, "_fake_class_index", None) is not None:
+        fake_idx = int(extractor._fake_class_index)
+    else:
+        fake_idx = extractor.get_fake_class_index(num_classes=num_classes)
+    return [float(p) for p in probs[:, fake_idx].detach().cpu().numpy()]
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +93,7 @@ class SAEDFPipeline:
     ----------
     model_name   : HF model id or timm/torchvision model name.
                    Must be the same model used during calibration
-                   (recalibrate_v2.py default: prithivMLmods/Deep-Fake-Detector-v2-Model).
+                   (recalibrate_v2.py default: hamzenium/ViT-Deepfake-Classifier).
     config_path  : Path to fusion_config.json written by recalibrate_v2.py.
     min_severity : Minimum zone severity to generate explanations for.
                    "medium" (default) suppresses borderline low-signal zones.
@@ -76,10 +107,13 @@ class SAEDFPipeline:
         config_path: str = "configs/fusion_config.json",
         min_severity: str = "medium",
         device: Optional[str] = None,
+        causal_correctness: bool = True,
+        causal_min_drop: Optional[float] = None,
     ) -> None:
         self.model_name   = model_name
         self.config_path  = config_path
         self.min_severity = min_severity
+        self.causal_correctness = causal_correctness
 
         # Load the deepfake detection model
         self.extractor = AttentionExtractor(
@@ -94,11 +128,21 @@ class SAEDFPipeline:
             min_severity=min_severity,
         )
 
-        # Pull calibration metadata for report stamping
+        # Pull calibration metadata for report stamping.
+        # causal_min_drop: explicit arg > fusion_config / explainer > 0.03
+        # (matches inference_server research-grade default; was hardcoded 0.02).
         cfg, *_ = load_fusion_config(config_path)
+        if causal_min_drop is not None:
+            self.causal_min_drop = float(causal_min_drop)
+        else:
+            self.causal_min_drop = float(
+                getattr(self.explainer, "causal_min_drop", None)
+                or cfg.get("causal_min_drop", 0.03)
+            )
         self._calibration_meta: Dict = {
             "config_path":    str(config_path),
             "beta_map":       cfg.get("beta", None),
+            "beta_for_fusion": getattr(self.explainer, "beta", None),
             "beta_ci":        (
                 [
                     cfg["beta_posterior"]["ci_lower"],
@@ -108,6 +152,8 @@ class SAEDFPipeline:
                 else None
             ),
             "n_calibration_frames": cfg.get("calibration_n_frames", None),
+            "causal_correctness": self.causal_correctness,
+            "causal_min_drop": self.causal_min_drop,
         }
 
     # ------------------------------------------------------------------
@@ -155,6 +201,18 @@ class SAEDFPipeline:
             phi_vec=inputs["phi"],
             fake_probability=inputs["fake_probability"],
         )
+
+        # Causal correctness gate: drop NL claims whose zones do not move P(fake)
+        if self.causal_correctness and explanation.concept_vectors:
+            explanation = filter_explanations_by_causal_correctness(
+                explanation=explanation,
+                image_bgr=image_bgr,
+                landmarks_68=landmarks_68,
+                fake_prob_fn=lambda imgs: classifier_fake_probabilities(
+                    self.extractor, imgs
+                ),
+                min_drop=self.causal_min_drop,
+            )
 
         # ------------------------------------------------------------------ #
         # Wrap in ForensicReport                                               #

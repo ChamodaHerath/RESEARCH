@@ -7,6 +7,7 @@ import { PredictionCard } from "./prediction-card";
 import { ClassificationTheoryCard } from "./classification-theory-card";
 import { SemanticExplanationsCard } from "./semantic-explanations-card";
 import { HeatmapCard } from "./heatmap-card";
+import { MaskGroundTruthCard } from "./mask-ground-truth-card";
 import { FacialRegionsCard } from "./facial-regions-card";
 import { TimelineCard } from "./timeline-card";
 import type { DetectionResponse } from "@/lib/types";
@@ -86,16 +87,24 @@ export function ResultsPanel({
               </FadeItem>
             )}
             <FadeItem index={2}>
-              <SemanticExplanationsCard explanations={result.semantic_explanations} />
-            </FadeItem>
-            <FadeItem index={3}>
-              <HeatmapCard beforeImage={result.faceCrop} afterImage={result.heatmap} />
-            </FadeItem>
-            <FadeItem index={4}>
               <FacialRegionsCard regions={result.facial_regions} />
             </FadeItem>
-            {result.mode === "video" && result.timeline.length > 0 && (
+            <FadeItem index={3}>
+              <SemanticExplanationsCard explanations={result.semantic_explanations} />
+            </FadeItem>
+            <FadeItem index={4}>
+              <HeatmapCard beforeImage={result.faceCrop} afterImage={result.heatmap} />
+            </FadeItem>
+            {result.mask_ground_truth?.available && result.mask_ground_truth.overlay && (
               <FadeItem index={5}>
+                <MaskGroundTruthCard
+                  beforeImage={result.faceCrop}
+                  maskGt={result.mask_ground_truth}
+                />
+              </FadeItem>
+            )}
+            {result.mode === "video" && result.timeline.length > 0 && (
+              <FadeItem index={result.mask_ground_truth?.available ? 6 : 5}>
                 <TimelineCard markers={result.timeline} />
               </FadeItem>
             )}

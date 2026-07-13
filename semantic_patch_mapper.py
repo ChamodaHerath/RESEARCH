@@ -141,6 +141,8 @@ class ConceptVector:
     # manipulation-type-conditioned Bayesian zone prior (Option 2).
     # Q(z) = (α + R(z)·w) / (α + β + w)  where (α,β) are literature priors.
     # None when ZonePriorModel is not loaded.
+    flag_reason: Optional[str] = field(default=None, repr=False)
+    # flag_reason: "calibrated_threshold" when score > per-zone cutoff.
 
     def to_dict(self) -> Dict:
         conf_pct = round(self.confidence * 100, 1)
@@ -162,6 +164,8 @@ class ConceptVector:
         }
         if self.zone_prior_score is not None:
             d["zone_anomaly_posterior"] = round(self.zone_prior_score, 4)
+        if self.flag_reason is not None:
+            d["flag_reason"] = self.flag_reason
         if self.R_ci_lower is not None:
             d["R_ci"] = {
                 "lower": round(self.R_ci_lower, 4),
@@ -190,6 +194,10 @@ class ExplanationOutput:
     method_probabilities: Optional[Dict[str, float]] = field(default=None, repr=False)
     Q_scores: Optional[np.ndarray] = field(default=None, repr=False)
     # Q_scores: (9,) marginal posterior zone anomaly probabilities Q(z)
+    # Causal correctness gate (occlusion drop) — None until filter_explanations_by_causal_correctness runs
+    causal_correctness_passed: Optional[List[bool]] = field(default=None, repr=False)
+    causal_drop_by_zone: Optional[Dict[str, float]] = field(default=None, repr=False)
+    causal_min_drop: Optional[float] = field(default=None, repr=False)
 
     def to_dict(self) -> Dict:
         d: Dict = {
@@ -207,6 +215,10 @@ class ExplanationOutput:
         if self.Q_scores is not None:
             d["Q_scores"] = {ZONE_NAMES[i]: round(float(self.Q_scores[i]), 4)
                              for i in range(NUM_ZONES)}
+        if self.causal_correctness_passed is not None:
+            d["causal_correctness_passed"] = self.causal_correctness_passed
+            d["causal_drop_by_zone"] = self.causal_drop_by_zone
+            d["causal_min_drop"] = self.causal_min_drop
         return d
 
 
@@ -618,25 +630,48 @@ def get_flagged_zones(
     max_zones: Optional[int] = None,
 ) -> List[Dict]:
     """
-    Return zones above the minimum severity threshold, sorted by R_score descending.
+    Return zones above the reporting threshold, sorted by score descending.
+
+    When ``zone_thresholds`` are provided (calibrated on Q(z) in
+    fusion_config.json), those alone decide flagging — flag only when
+    ``score > threshold`` (strict). Do NOT also require the global severity
+    floor. Combining both was a double-gate bug that silently dropped zones
+    whose Q(z) cleared the calibrated threshold but sat near/under
+    SEVERITY_THRESHOLDS["low"] after assign_severity.
+
+    Without per-zone thresholds, fall back to the global severity gate
+    (``min_severity``).
 
     Args:
-        R            : shape (9,) — fused anomaly scores.
-        min_severity : minimum severity to report ("low" | "medium" | "high").
+        R            : shape (9,) — scores used for flagging (Q(z) or R(z)).
+        min_severity : minimum severity when zone_thresholds is absent.
+        zone_thresholds : optional per-zone calibrated cutoffs.
+        max_zones    : optional cap on how many zones to return.
 
     Returns:
         List of dicts: [{"zone": ..., "R_score": ..., "severity": ...}, ...]
     """
     flagged = []
+    use_zone_thresholds = zone_thresholds is not None and len(zone_thresholds) > 0
     for i, zone in enumerate(ZONE_NAMES):
-        threshold = (
-            float(zone_thresholds[zone])
-            if zone_thresholds is not None and zone in zone_thresholds
-            else SEVERITY_THRESHOLDS[min_severity]
-        )
-        sev = assign_severity(float(R[i]))
-        if sev is not None and float(R[i]) > threshold:
-            flagged.append({"zone": zone, "R_score": float(R[i]), "severity": sev})
+        score = float(R[i])
+        if use_zone_thresholds and zone in zone_thresholds:
+            # Strict: flag only when score is higher than the calibrated bar.
+            # Round to 4 decimals (same as API display) so float32 noise cannot
+            # turn an exact threshold hit into a false positive.
+            thr = float(zone_thresholds[zone])
+            if round(score, 4) <= round(thr, 4):
+                continue
+            sev = assign_severity(score) or "low"
+        else:
+            sev = assign_severity(score)
+            if sev is None:
+                continue
+            # Enforce min_severity ordering: high > medium > low
+            order = {"low": 0, "medium": 1, "high": 2}
+            if order.get(sev, -1) < order.get(min_severity, 0):
+                continue
+        flagged.append({"zone": zone, "R_score": score, "severity": sev})
     flagged = sorted(flagged, key=lambda d: d["R_score"], reverse=True)
     return flagged[:max_zones] if max_zones is not None else flagged
 
@@ -701,6 +736,7 @@ def build_concept_vector(
         R_ci_lower=float(R_ci_lower) if R_ci_lower is not None else None,
         R_ci_upper=float(R_ci_upper) if R_ci_upper is not None else None,
         zone_prior_score=float(zone_prior_score) if zone_prior_score is not None else None,
+        flag_reason=None,
     )
 
 
@@ -758,14 +794,16 @@ def build_concept_vectors_from_R(
 
         zps = Q_scores.get(zone) if Q_scores is not None else None
 
-        cvs.append(build_concept_vector(
+        cv = build_concept_vector(
             zone,
             R_score_raw,
             artifact_posterior=probs,
             R_ci_lower=float(ci_lower[z_idx]) if ci_lower is not None else None,
             R_ci_upper=float(ci_upper[z_idx]) if ci_upper is not None else None,
             zone_prior_score=float(zps) if zps is not None else None,
-        ))
+        )
+        cv.flag_reason = "calibrated_threshold"
+        cvs.append(cv)
     return cvs
 
 
@@ -920,6 +958,104 @@ def generate_verified_explanation(cv: ConceptVector) -> Tuple[str, bool]:
 
 
 # ---------------------------------------------------------------------------
+# Causal correctness gate — filter claims before the final report
+# ---------------------------------------------------------------------------
+
+DEFAULT_CAUSAL_MIN_DROP = 0.02
+
+
+def filter_explanations_by_causal_correctness(
+    explanation: ExplanationOutput,
+    image_bgr: np.ndarray,
+    landmarks_68: Sequence[Sequence[float]],
+    fake_prob_fn,
+    min_drop: float = DEFAULT_CAUSAL_MIN_DROP,
+) -> ExplanationOutput:
+    """
+    Keep only NL claims whose zones causally drive the fake score.
+
+    After the textual faithfulness verifier, each remaining flagged zone is
+    occluded and the classifier is re-run. A claim is retained only when
+    P(fake) drops by at least ``min_drop``. Claims that fail are removed from
+    ``concept_vectors`` / ``nl_explanations`` so they never enter the final
+    forensic report.
+
+    This is causal sensitivity (does this zone affect the detector?), not
+    pixel-mask ground truth. Mask GT remains an offline evaluation path.
+
+    Args:
+        explanation  : output of predict_label_and_explanation / explainer.predict
+        image_bgr    : (224, 224, 3) face crop used for the claim
+        landmarks_68 : landmarks in the same 224 space
+        fake_prob_fn : callable(List[np.ndarray]) -> List[float]
+        min_drop     : minimum baseline−occluded drop to keep a claim
+
+    Returns:
+        A new ExplanationOutput with only causally-supported claims retained.
+        Classification label is left unchanged (detector verdict is independent
+        of which explanation sentences survive).
+    """
+    from zone_localization import measure_zone_causal_drops, zone_passes_causal_check
+
+    if not explanation.concept_vectors:
+        return ExplanationOutput(
+            label=explanation.label,
+            fake_probability=explanation.fake_probability,
+            concept_vectors=[],
+            nl_explanations=[],
+            faithfulness_passed=[],
+            R_scores=explanation.R_scores,
+            inferred_method=explanation.inferred_method,
+            method_probabilities=explanation.method_probabilities,
+            Q_scores=explanation.Q_scores,
+            causal_correctness_passed=[],
+            causal_drop_by_zone={},
+            causal_min_drop=float(min_drop),
+        )
+
+    zones = [cv.zone for cv in explanation.concept_vectors]
+    drops = measure_zone_causal_drops(
+        fake_prob_fn=fake_prob_fn,
+        image_bgr=image_bgr,
+        landmarks_68=landmarks_68,
+        zones=zones,
+    )
+
+    kept_cvs: List[ConceptVector] = []
+    kept_sentences: List[str] = []
+    kept_faithful: List[bool] = []
+    kept_causal: List[bool] = []
+    drop_by_zone: Dict[str, float] = {
+        z: float(info["drop"]) for z, info in drops.items()
+    }
+
+    for i, cv in enumerate(explanation.concept_vectors):
+        drop = drop_by_zone.get(cv.zone, 0.0)
+        ok = zone_passes_causal_check(drop, min_drop=min_drop)
+        if not ok:
+            continue
+        kept_cvs.append(cv)
+        kept_sentences.append(explanation.nl_explanations[i])
+        kept_faithful.append(explanation.faithfulness_passed[i])
+        kept_causal.append(True)
+
+    return ExplanationOutput(
+        label=explanation.label,
+        fake_probability=explanation.fake_probability,
+        concept_vectors=kept_cvs,
+        nl_explanations=kept_sentences,
+        faithfulness_passed=kept_faithful,
+        R_scores=explanation.R_scores,
+        inferred_method=explanation.inferred_method,
+        method_probabilities=explanation.method_probabilities,
+        Q_scores=explanation.Q_scores,
+        causal_correctness_passed=kept_causal,
+        causal_drop_by_zone=drop_by_zone,
+        causal_min_drop=float(min_drop),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Config loading + Bayesian prior reconstruction
 # ---------------------------------------------------------------------------
 
@@ -999,6 +1135,7 @@ def predict_label_and_explanation(
     zone_prior_model=None,
     zone_thresholds: Optional[Mapping[str, float]] = None,
     max_flagged_zones: Optional[int] = None,
+    min_fake_probability_for_explanations: float = 0.70,
 ) -> ExplanationOutput:
     """
     Full SAEDF inference pipeline for one frame.
@@ -1018,6 +1155,8 @@ def predict_label_and_explanation(
       8. Build concept vectors for flagged zones (Bayesian artifact selection if
          artifact_prior is provided, else deterministic rank-0 fallback).
          Zone flagging uses Q(z) when available, else R(z).
+         Research-grade gate: no flags when label is Real OR when
+         P(fake) < min_fake_probability_for_explanations.
       9. Generate and verify NL explanations.
 
     Args:
@@ -1043,6 +1182,10 @@ def predict_label_and_explanation(
         zone_prior_model : optional ZonePriorModel instance (Option 2).  When
                            provided, infers manipulation method from R(z) and
                            computes posterior zone anomaly probabilities Q(z).
+        zone_thresholds  : optional per-zone Q(z) cutoffs from fusion_config.
+        max_flagged_zones: optional cap on flagged zones.
+        min_fake_probability_for_explanations: P(fake) must exceed this before
+                           any zone is flagged (default 0.70).
 
     Returns:
         ExplanationOutput with label, concept vectors, NL sentences, and
@@ -1125,17 +1268,30 @@ def predict_label_and_explanation(
             ci_lower_arr = np.array([q_ci_lower_dict[z] for z in ZONE_NAMES], dtype=np.float32)
             ci_upper_arr = np.array([q_ci_upper_dict[z] for z in ZONE_NAMES], dtype=np.float32)
 
-    # Concept vectors — zone flagging on Q(z) when available, else R(z)
-    cvs = build_concept_vectors_from_R(
-        R,
-        min_severity=min_severity,
-        artifact_prior=artifact_prior,
-        ci_lower=ci_lower_arr,
-        ci_upper=ci_upper_arr,
-        Q_scores=Q_dict,
-        zone_thresholds=zone_thresholds,
-        max_zones=max_flagged_zones,
-    )
+    # Label + research-grade explanation gate.
+    # Manipulation claims require: Fake verdict AND confident P(fake).
+    # Real / weak-Fake still get R/Q scores for the region table, but zero
+    # flags / NL sentences. Thresholds alone are real-face quantiles, so
+    # authentic faces would otherwise produce false forensic claims.
+    label = "Fake" if fake_probability >= 0.5 else "Real"
+    min_p = float(min_fake_probability_for_explanations)
+    allow_explanations = label == "Fake" and float(fake_probability) > min_p
+
+    if not allow_explanations:
+        cvs = []
+    else:
+        # Flag only when score > calibrated threshold (or severity floor
+        # when no per-zone thresholds).
+        cvs = build_concept_vectors_from_R(
+            R,
+            min_severity=min_severity,
+            artifact_prior=artifact_prior,
+            ci_lower=ci_lower_arr,
+            ci_upper=ci_upper_arr,
+            Q_scores=Q_dict,
+            zone_thresholds=zone_thresholds,
+            max_zones=max_flagged_zones,
+        )
 
     # NL explanations with faithfulness verification
     sentences: List[str] = []
@@ -1144,11 +1300,6 @@ def predict_label_and_explanation(
         sentence, passed = generate_verified_explanation(cv)
         sentences.append(sentence)
         faithfulness.append(passed)
-
-    # Label
-    label = "Fake" if fake_probability >= 0.5 and len(cvs) > 0 else "Real"
-    if fake_probability >= 0.5 and len(cvs) == 0:
-        label = "Fake"  # detected but no zone above threshold — borderline case
 
     return ExplanationOutput(
         label=label,
@@ -1194,7 +1345,6 @@ class SemanticExplanationGenerator:
 
         # Auto-load all Bayesian config fields; fall back to supplied beta if absent
         cfg, artifact_prior, A_stats, S_stats, beta_posterior = load_fusion_config(config_path)
-        self.beta           = float(cfg.get("beta", beta))
         self.artifact_prior = artifact_prior   # DirichletArtifactPrior or None
         self.A_stats        = A_stats          # population normalisation stats or None
         self.S_stats        = S_stats
@@ -1206,16 +1356,45 @@ class SemanticExplanationGenerator:
         self.max_flagged_zones: Optional[int] = (
             int(cfg["max_flagged_zones"]) if cfg.get("max_flagged_zones") is not None else None
         )
+        self.min_fake_probability_for_explanations: float = float(
+            cfg.get("min_fake_probability_for_explanations", 0.70)
+        )
+        self.causal_min_drop: float = float(cfg.get("causal_min_drop", 0.03))
+        self.research_policy: Optional[Dict] = cfg.get("research_policy")
         self.beta_mean: Optional[float] = (
             float(beta_posterior["mean"]) if beta_posterior else None
         )
         self.beta_std: Optional[float] = (
             float(beta_posterior["std"]) if beta_posterior else None
         )
-        # Bayesian zone prior (Option 2) — always active (uses hardcoded literature priors)
+        # MAP β from calibration (often 1.0) — kept for reporting / provenance.
+        self.beta_map: float = float(cfg.get("beta", beta))
+        # Fusion uses posterior mean when available so S(z) is not zeroed out
+        # when MAP β collapses to 1.0 (attention-only).
+        use_mean = str(cfg.get("beta_for_fusion", "posterior_mean")).lower() in (
+            "posterior_mean", "mean", "1", "true"
+        )
+        if use_mean and self.beta_mean is not None:
+            self.beta = float(self.beta_mean)
+        else:
+            self.beta = self.beta_map
+        # Bayesian zone prior (Option 2) — always active. Uses learned method
+        # signatures from calibrate_method_signatures.py when the signature
+        # file exists, otherwise falls back to the literature priors.
+        # evidence_weight comes from fusion_config (recalibrate_v2.py) so
+        # inference Q(z) matches the scale the thresholds were fit on.
         try:
             from zone_prior import ZonePriorModel as _ZPM
-            self.zone_prior_model = _ZPM()
+            ew = float(cfg.get("evidence_weight", 10.0))
+            sig_path = Path(
+                cfg.get("method_signatures_path") or "configs/method_signatures.json"
+            )
+            if sig_path.exists():
+                self.zone_prior_model = _ZPM.from_signature_file(
+                    sig_path, evidence_weight=ew
+                )
+            else:
+                self.zone_prior_model = _ZPM(evidence_weight=ew)
         except ImportError:
             self.zone_prior_model = None
 
@@ -1242,6 +1421,7 @@ class SemanticExplanationGenerator:
             zone_prior_model=self.zone_prior_model,
             zone_thresholds=self.zone_thresholds,
             max_flagged_zones=self.max_flagged_zones,
+            min_fake_probability_for_explanations=self.min_fake_probability_for_explanations,
         )
 
     def predict_batch(
@@ -1490,6 +1670,7 @@ __all__ = [
     "build_concept_vector", "build_concept_vectors_from_R",
     # NLG
     "generate_nl_explanation", "verify_faithfulness", "generate_verified_explanation",
+    "filter_explanations_by_causal_correctness", "DEFAULT_CAUSAL_MIN_DROP",
     # Pipeline
     "predict_label_and_explanation",
     # Class
