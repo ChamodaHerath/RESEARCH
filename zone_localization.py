@@ -29,6 +29,7 @@ can exercise it in CI.
 
 from __future__ import annotations
 
+import base64
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import cv2
@@ -87,8 +88,135 @@ def crop_and_resize_mask(
     if x2 <= x1 or y2 <= y1:
         raise ValueError(f"Invalid crop_box {list(crop_box)} for mask of shape {(h, w)}.")
     crop = mask_frame[y1:y2, x1:x2]
-    resized = cv2.resize(crop, (target_size, target_size), interpolation=cv2.INTER_LINEAR)
+    # Nearest-neighbour keeps FF++ masks binary after resize (linear blur fills
+    # the crop and looks like a solid green block in the demo overlay).
+    resized = cv2.resize(crop, (target_size, target_size), interpolation=cv2.INTER_NEAREST)
     return resized.astype(np.float32) / 255.0
+
+
+def binarize_manipulation_mask(
+    mask_224: np.ndarray,
+    threshold: float = 0.5,
+) -> np.ndarray:
+    """
+    FF++ convention: bright pixels = manipulated. Returns float32 {0, 1}.
+    """
+    return (np.clip(mask_224.astype(np.float32), 0.0, 1.0) >= threshold).astype(
+        np.float32
+    )
+
+
+def render_manipulation_overlay(
+    face_bgr: np.ndarray,
+    mask_224: np.ndarray,
+    threshold: float = 0.5,
+    alpha: float = 0.55,
+    draw_contours: bool = True,
+) -> np.ndarray:
+    """
+    Tint only manipulated pixels on the face crop; optional green outline.
+    """
+    binary = binarize_manipulation_mask(mask_224, threshold)
+    out = face_bgr.astype(np.float32).copy()
+    manip = binary > 0
+    if manip.any():
+        green = np.array([0.0, 255.0, 0.0], dtype=np.float32)
+        out[manip] = out[manip] * (1.0 - alpha) + green * alpha
+    out_u8 = np.clip(out, 0, 255).astype(np.uint8)
+    if draw_contours and manip.any():
+        mask_u8 = (binary * 255).astype(np.uint8)
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out_u8, contours, -1, (0, 255, 0), 1)
+    return out_u8
+
+
+def render_manipulation_pixels_only(
+    face_bgr: np.ndarray,
+    mask_224: np.ndarray,
+    threshold: float = 0.5,
+) -> np.ndarray:
+    """
+    Black background with only the manipulated pixels visible (face texture +
+    green outline). Makes the exact edited region obvious in the demo.
+    """
+    binary = binarize_manipulation_mask(mask_224, threshold)
+    out = np.zeros_like(face_bgr)
+    manip = binary > 0
+    out[manip] = face_bgr[manip]
+    if manip.any():
+        mask_u8 = (binary * 255).astype(np.uint8)
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out, contours, -1, (0, 255, 0), 1)
+    return out
+
+
+# BGR tint for system-claimed semantic zones (contrasts with green GT).
+CLAIMED_ZONE_TINT_BGR = (80, 80, 255)
+CLAIMED_ZONE_OUTLINE_BGR = (80, 80, 255)
+
+
+def combine_zone_masks(
+    zone_masks: Dict[str, np.ndarray],
+    zones: Sequence[str],
+) -> np.ndarray:
+    """Union of rasterised convex-hull masks for the named zones."""
+    if not zone_masks:
+        return np.zeros((IMAGE_SIZE, IMAGE_SIZE), dtype=bool)
+    shape = next(iter(zone_masks.values())).shape
+    combined = np.zeros(shape, dtype=bool)
+    for zone in zones:
+        zm = zone_masks.get(zone)
+        if zm is not None:
+            combined |= zm
+    return combined
+
+
+def render_claimed_zones_overlay(
+    face_bgr: np.ndarray,
+    landmarks_68: Sequence[Sequence[float]],
+    zones: Sequence[str],
+    alpha: float = 0.55,
+) -> np.ndarray:
+    """Face crop with red tint on pixels inside explained semantic zones."""
+    zone_masks = zone_pixel_masks(landmarks_68, image_size=face_bgr.shape[0])
+    claimed = combine_zone_masks(zone_masks, zones)
+    out = face_bgr.astype(np.float32).copy()
+    if claimed.any():
+        tint = np.array(CLAIMED_ZONE_TINT_BGR, dtype=np.float32)
+        out[claimed] = out[claimed] * (1.0 - alpha) + tint * alpha
+    out_u8 = np.clip(out, 0, 255).astype(np.uint8)
+    if claimed.any():
+        mask_u8 = claimed.astype(np.uint8) * 255
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out_u8, contours, -1, CLAIMED_ZONE_OUTLINE_BGR, 1)
+    return out_u8
+
+
+def render_claimed_zones_pixels_only(
+    face_bgr: np.ndarray,
+    landmarks_68: Sequence[Sequence[float]],
+    zones: Sequence[str],
+) -> np.ndarray:
+    """
+    Black background with only explained-zone pixels visible (face texture +
+    red outline). Comparable to render_manipulation_pixels_only for GT.
+    """
+    zone_masks = zone_pixel_masks(landmarks_68, image_size=face_bgr.shape[0])
+    claimed = combine_zone_masks(zone_masks, zones)
+    out = np.zeros_like(face_bgr)
+    out[claimed] = face_bgr[claimed]
+    if claimed.any():
+        mask_u8 = claimed.astype(np.uint8) * 255
+        contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out, contours, -1, CLAIMED_ZONE_OUTLINE_BGR, 1)
+    return out
+
+
+def encode_bgr_image_b64(image_bgr: np.ndarray, jpeg_quality: int = 90) -> str:
+    ok, buf = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
+    if not ok:
+        raise RuntimeError("Failed to encode mask visualization.")
+    return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
 
 
 def zone_pixel_masks(
@@ -374,6 +502,10 @@ def zone_passes_causal_check(
 
 __all__ = [
     "crop_and_resize_mask",
+    "binarize_manipulation_mask",
+    "render_manipulation_overlay",
+    "render_manipulation_pixels_only",
+    "encode_bgr_image_b64",
     "zone_pixel_masks",
     "zone_gt_from_mask",
     "localization_counts",

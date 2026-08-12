@@ -118,9 +118,24 @@ export interface MaskGroundTruthVisual {
   available: boolean;
   /** Face crop with green GT manipulation mask overlay (base64 data URL). */
   overlay: string;
+  /** Black background — only edited GT pixels visible (base64 data URL). */
+  mask_pixels?: string;
   mask_coverage: number;
   frame_index: number;
   mask_source: string;
+  note: string;
+}
+
+/** Rasterised semantic zone claims for pixel-level comparison with GT. */
+export interface ClaimedZonesVisual {
+  available: boolean;
+  /** Face crop with red tint on explained zone pixels (base64 data URL). */
+  overlay?: string;
+  /** Black background — only explained zone pixels visible (base64 data URL). */
+  zone_pixels?: string;
+  zones: string[];
+  zone_labels: string[];
+  zone_coverage: number;
   note: string;
 }
 
@@ -144,6 +159,8 @@ export interface DetectionResponse {
    * Green overlay = true edited pixels (dataset GT), not model attention.
    */
   mask_ground_truth?: MaskGroundTruthVisual | null;
+  /** Red-highlight rasterisation of semantic zone claims (convex hulls). */
+  claimed_zones_visual?: ClaimedZonesVisual | null;
   confidence_breakdown: ConfidenceBreakdown[];
   /** Step-by-step theoretical basis for the Real/Fake verdict. */
   classification_reasoning: ClassificationReasoning;

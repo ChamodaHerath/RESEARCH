@@ -32,13 +32,19 @@ from ffpp_utils import (
     video_id_from_key,
 )
 from zone_localization import (
+    binarize_manipulation_mask,
     blurred_baseline,
+    combine_zone_masks,
     crop_and_resize_mask,
     curve_auc,
     is_likely_mask_frame,
     localization_counts,
     occlude_zones,
     pointing_game_hit,
+    render_claimed_zones_overlay,
+    render_claimed_zones_pixels_only,
+    render_manipulation_overlay,
+    render_manipulation_pixels_only,
     reveal_zones,
     summarize_localization,
     zone_gt_from_mask,
@@ -221,6 +227,30 @@ class TestZoneGroundTruth:
         mask = np.zeros((224, 224), dtype=np.uint8)
         mask[50:170, 80:150] = 255
         assert is_likely_mask_frame(mask)
+
+    def test_binarize_and_pixel_render_only_highlights_edited_region(self):
+        face = np.random.default_rng(1).integers(40, 200, (224, 224, 3), dtype=np.uint8)
+        mask = np.zeros((224, 224), dtype=np.float32)
+        mask[80:120, 90:130] = 1.0
+        binary = binarize_manipulation_mask(mask)
+        assert binary.sum() == pytest.approx(40 * 40, rel=0.01)
+        overlay = render_manipulation_overlay(face, mask)
+        pixels = render_manipulation_pixels_only(face, mask)
+        # Unedited pixels stay unchanged on overlay
+        assert np.array_equal(overlay[~binary.astype(bool)], face[~binary.astype(bool)])
+        # Pixels-only view is black outside edited region
+        assert (pixels[~binary.astype(bool)] == 0).all()
+        assert (pixels[binary.astype(bool)] != 0).any()
+
+    def test_claimed_zones_pixels_only_highlights_zone_hulls(self, sample_landmarks_68):
+        face = np.random.default_rng(2).integers(40, 200, (224, 224, 3), dtype=np.uint8)
+        zmasks = zone_pixel_masks(sample_landmarks_68)
+        claimed = combine_zone_masks(zmasks, ["mouth"])
+        overlay = render_claimed_zones_overlay(face, sample_landmarks_68, ["mouth"])
+        pixels = render_claimed_zones_pixels_only(face, sample_landmarks_68, ["mouth"])
+        assert np.array_equal(overlay[~claimed], face[~claimed])
+        assert (pixels[~claimed] == 0).all()
+        assert (pixels[claimed] != 0).any()
 
     def test_zone_pixel_masks_cover_all_zones(self, sample_landmarks_68):
         masks = zone_pixel_masks(sample_landmarks_68)

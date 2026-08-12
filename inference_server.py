@@ -63,7 +63,18 @@ from semantic_patch_mapper import (
     filter_explanations_by_causal_correctness,
 )
 from ffpp_utils import FFPP_METHODS, find_ffpp_mask_video
-from zone_localization import crop_and_resize_mask, is_likely_mask_frame
+from zone_localization import (
+    binarize_manipulation_mask,
+    combine_zone_masks,
+    crop_and_resize_mask,
+    encode_bgr_image_b64,
+    is_likely_mask_frame,
+    render_claimed_zones_overlay,
+    render_claimed_zones_pixels_only,
+    render_manipulation_overlay,
+    render_manipulation_pixels_only,
+    zone_pixel_masks,
+)
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 log = logging.getLogger("inference_server")
@@ -257,6 +268,7 @@ def run_single_frame(image_bgr_native: np.ndarray, bundle: ModelBundle) -> Dict:
 
     return {
         "face_224": face_224,
+        "landmarks_224": landmarks_224,
         "fake_probability": inputs["fake_probability"],
         "explanation": explanation,
         "heatmap_224": inputs["heatmap_224"],
@@ -326,24 +338,60 @@ def _resolve_ffpp_mask_path(filename: Optional[str]) -> Optional[Path]:
 def render_mask_gt_overlay_b64(
     face_224: np.ndarray,
     mask_224: np.ndarray,
-    alpha: float = 0.45,
+    alpha: float = 0.55,
 ) -> str:
-    """Overlay FF++ manipulation mask (green) on the aligned face crop."""
-    heat = np.clip(mask_224.astype(np.float32), 0.0, 1.0)
-    if heat.ndim == 2:
-        color = np.zeros_like(face_224, dtype=np.float32)
-        color[:, :, 1] = heat * 255.0  # green channel = manipulated pixels
-    else:
-        color = heat
-    blend = (
-        face_224.astype(np.float32) * (1.0 - alpha * heat[..., None])
-        + color * (alpha * heat[..., None])
-    )
-    out = np.clip(blend, 0, 255).astype(np.uint8)
-    ok, buf = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    if not ok:
-        raise RuntimeError("Failed to encode mask GT overlay.")
-    return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
+    """Overlay FF++ manipulation mask — green tint on edited pixels only."""
+    overlay = render_manipulation_overlay(face_224, mask_224, alpha=alpha)
+    return encode_bgr_image_b64(overlay)
+
+
+def render_mask_gt_pixels_b64(
+    face_224: np.ndarray,
+    mask_224: np.ndarray,
+) -> str:
+    """Black canvas showing only the manipulated pixels from the GT mask."""
+    pixels = render_manipulation_pixels_only(face_224, mask_224)
+    return encode_bgr_image_b64(pixels)
+
+
+def build_claimed_zones_visual(
+    face_224: np.ndarray,
+    landmarks_224: np.ndarray,
+    explanation: ExplanationOutput,
+) -> Dict:
+    """
+    Rasterise semantic zone claims (convex hulls from 68 landmarks) for
+    side-by-side comparison with FF++ edited-pixel ground truth.
+    """
+    zones = [cv.zone for cv in explanation.concept_vectors]
+    if explanation.label != "Fake" or not zones:
+        return {
+            "available": False,
+            "zones": [],
+            "zone_labels": [],
+            "zone_coverage": 0.0,
+            "note": "No semantic zone claims — nothing to rasterise for comparison.",
+        }
+    zone_masks = zone_pixel_masks(landmarks_224)
+    claimed = combine_zone_masks(zone_masks, zones)
+    coverage = float(claimed.mean())
+    return {
+        "available": True,
+        "overlay": encode_bgr_image_b64(
+            render_claimed_zones_overlay(face_224, landmarks_224, zones)
+        ),
+        "zone_pixels": encode_bgr_image_b64(
+            render_claimed_zones_pixels_only(face_224, landmarks_224, zones)
+        ),
+        "zones": zones,
+        "zone_labels": [z.replace("_", " ").title() for z in zones],
+        "zone_coverage": round(coverage, 4),
+        "note": (
+            "Red highlights mark pixels inside the semantic zones the system "
+            "explained (convex hulls from 68-point landmarks). Compare "
+            "side-by-side with green GT edited pixels when available."
+        ),
+    }
 
 
 def try_build_mask_ground_truth_visual(
@@ -376,18 +424,20 @@ def try_build_mask_ground_truth_visual(
             log.warning("Rejected non-binary mask candidate: %s", mask_path)
             return None
         mask_224 = crop_and_resize_mask(mask_frame, crop_box, target_size=IMAGE_SIZE)
-        coverage = float(mask_224.mean())
+        binary = binarize_manipulation_mask(mask_224)
+        coverage = float(binary.mean())
         return {
             "available": True,
             "overlay": render_mask_gt_overlay_b64(face_224, mask_224),
+            "mask_pixels": render_mask_gt_pixels_b64(face_224, mask_224),
             "mask_coverage": round(coverage, 4),
             "frame_index": idx,
             "mask_source": mask_path.name,
             "note": (
-                "Green overlay = FaceForensics++ manipulation-mask ground truth "
-                "for this clip (true edited pixels), aligned to the same face crop. "
-                "Compare with the model attention heatmap — not available for "
-                "arbitrary non-FF++ uploads."
+                "Green highlights mark the exact FaceForensics++ manipulation-mask "
+                "pixels (true edited region), aligned to the same face crop. "
+                "Use “Edited pixels only” to see just those pixels on a black "
+                "background — not a full-face block."
             ),
         }
     except Exception as exc:
@@ -1035,6 +1085,11 @@ def infer_image():
             crop_box=result.get("crop_box"),
             frame_index=0,
         )
+        claimed_zones = build_claimed_zones_visual(
+            face_224=result["face_224"],
+            landmarks_224=result["landmarks_224"],
+            explanation=result["explanation"],
+        )
     elapsed = time.time() - t0
 
     explanation: ExplanationOutput = result["explanation"]
@@ -1063,6 +1118,7 @@ def infer_image():
         "attention_map": heatmap_b64,
         "faceCrop": face_crop_b64,
         "mask_ground_truth": mask_gt,
+        "claimed_zones_visual": claimed_zones,
         "classification_reasoning": build_classification_reasoning(
             explanation, fake_probability, bundle
         ),
@@ -1114,6 +1170,7 @@ def infer_video():
         skipped = 0
         best_face_224: Optional[np.ndarray] = None
         best_heatmap_224: Optional[np.ndarray] = None
+        best_landmarks_224: Optional[np.ndarray] = None
         best_crop_box: Optional[List[int]] = None
         best_frame_idx: int = 0
         best_prob = -1.0
@@ -1142,6 +1199,7 @@ def infer_video():
                     best_prob = prob
                     best_face_224 = result["face_224"]
                     best_heatmap_224 = result["heatmap_224"]
+                    best_landmarks_224 = result["landmarks_224"]
                     best_explanation = result["explanation"]
                     best_crop_box = result.get("crop_box")
                     best_frame_idx = int(frame_idx)
@@ -1160,6 +1218,11 @@ def infer_video():
                 face_224=best_face_224,
                 crop_box=best_crop_box,
                 frame_index=best_frame_idx,
+            )
+            claimed_zones = build_claimed_zones_visual(
+                face_224=best_face_224,
+                landmarks_224=best_landmarks_224,
+                explanation=best_explanation,
             )
         elapsed = time.time() - t0
     finally:
@@ -1215,6 +1278,7 @@ def infer_video():
         "attention_map": heatmap_b64,
         "faceCrop": face_crop_b64,
         "mask_ground_truth": mask_gt,
+        "claimed_zones_visual": claimed_zones,
         "confidence_breakdown": build_confidence_breakdown(representative, bundle) if representative else [],
         "classification_reasoning": build_classification_reasoning(
             representative, mean_prob, bundle

@@ -214,6 +214,33 @@ def test_build_classification_reasoning_zero_flagged_zone_case():
     assert "0 zones flagged" in reasoning["steps"][-1]["value"]
 
 
+def test_build_claimed_zones_visual_schema(sample_landmarks_68):
+    face = np.random.default_rng(3).integers(40, 200, (224, 224, 3), dtype=np.uint8)
+    explanation = _make_explanation(n_flagged=2)
+    payload = inference_server.build_claimed_zones_visual(
+        face_224=face,
+        landmarks_224=sample_landmarks_68,
+        explanation=explanation,
+    )
+    assert payload["available"] is True
+    assert len(payload["zones"]) == 2
+    assert payload["zone_pixels"].startswith("data:image/jpeg;base64,")
+    assert payload["overlay"].startswith("data:image/jpeg;base64,")
+    assert 0.0 < payload["zone_coverage"] < 1.0
+
+
+def test_build_claimed_zones_visual_unavailable_when_no_claims():
+    face = np.zeros((224, 224, 3), dtype=np.uint8)
+    explanation = _make_explanation(n_flagged=0)
+    payload = inference_server.build_claimed_zones_visual(
+        face_224=face,
+        landmarks_224=np.zeros((68, 2), dtype=np.float32),
+        explanation=explanation,
+    )
+    assert payload["available"] is False
+    assert payload["zones"] == []
+
+
 # def test_build_confidence_breakdown_schema():
 #     explanation = _make_explanation(n_flagged=1)
 #     bundle = _make_bundle()

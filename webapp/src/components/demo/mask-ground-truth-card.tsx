@@ -43,6 +43,7 @@ export function MaskGroundTruthCard({
   }, [updateFromClientX]);
 
   const coveragePct = (maskGt.mask_coverage * 100).toFixed(1);
+  const pixelsSrc = maskGt.mask_pixels ?? maskGt.overlay;
 
   return (
     <GlassCard className="flex flex-col gap-5 p-6">
@@ -52,13 +53,18 @@ export function MaskGroundTruthCard({
           Manipulation Mask (GT)
         </h3>
         <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium text-emerald-300">
-          Offline ground truth
+          Pixel-level ground truth
         </span>
       </div>
 
+      <p className="text-xs leading-relaxed text-slate-400">
+        Only the pixels the dataset marks as edited are highlighted — not the
+        whole face box. Drag the slider to compare the face with the overlay.
+      </p>
+
       <div
         ref={containerRef}
-        className="relative aspect-square w-full max-w-sm mx-auto select-none overflow-hidden rounded-2xl border border-white/10"
+        className="relative mx-auto aspect-square w-full max-w-sm select-none overflow-hidden rounded-2xl border border-white/10"
         onPointerDown={(e) => {
           draggingRef.current = true;
           updateFromClientX(e.clientX);
@@ -79,24 +85,24 @@ export function MaskGroundTruthCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={maskGt.overlay}
-            alt="FF++ manipulation mask ground truth overlay"
+            alt="Manipulated pixels highlighted on face"
             className="absolute inset-0 h-full w-full object-cover"
             draggable={false}
           />
           <div className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
-            True edited region
+            Edited pixels highlighted
           </div>
         </div>
 
-        <div className="absolute left-2 bottom-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-          Face crop
+        <div className="absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+          Original face
         </div>
 
         <div
-          className="absolute top-0 bottom-0 z-10 w-0.5 bg-white/80 shadow-[0_0_10px_2px_rgba(255,255,255,0.5)]"
+          className="absolute bottom-0 top-0 z-10 w-0.5 bg-white/80 shadow-[0_0_10px_2px_rgba(255,255,255,0.5)]"
           style={{ left: `${percent}%` }}
         >
-          <div className="absolute top-1/2 left-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-white/40 bg-[#0B1120] shadow-lg">
+          <div className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-white/40 bg-[#0B1120] shadow-lg">
             <MoveHorizontal className="h-4 w-4 text-white" />
           </div>
         </div>
@@ -108,18 +114,32 @@ export function MaskGroundTruthCard({
         max={100}
         value={percent}
         onChange={(e) => setPercent(Number(e.target.value))}
-        className="h-1.5 w-full max-w-sm mx-auto cursor-pointer appearance-none rounded-full bg-white/10 accent-emerald-400"
+        className="mx-auto h-1.5 w-full max-w-sm cursor-pointer appearance-none rounded-full bg-white/10 accent-emerald-400"
       />
 
+      <div className="mx-auto w-full max-w-sm">
+        <p className="mb-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Edited pixels only (black = untouched)
+        </p>
+        <div className="overflow-hidden rounded-xl border border-emerald-500/25 bg-black">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pixelsSrc}
+            alt="Manipulated pixels only on black background"
+            className="mx-auto aspect-square w-full object-contain"
+            draggable={false}
+          />
+        </div>
+      </div>
+
       <p className="text-center text-xs text-slate-500">
-        Green = FaceForensics++ manipulation-mask ground truth (true edited pixels),
-        aligned to the same face crop. Compare with the attention heatmap above.
+        {maskGt.note}
         {maskGt.mask_source ? (
           <>
             {" "}
             Source: <span className="text-slate-400">{maskGt.mask_source}</span>
             {" · "}
-            coverage {coveragePct}%
+            edited area {coveragePct}% of face crop
           </>
         ) : null}
       </p>

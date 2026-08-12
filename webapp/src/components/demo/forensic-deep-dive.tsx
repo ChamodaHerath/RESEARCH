@@ -6,7 +6,6 @@ import {
   Download,
   Fingerprint,
   ShieldAlert,
-  CheckCircle2,
   FileText,
   Layers,
   Activity,
@@ -16,7 +15,6 @@ import {
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { generateReportPdf } from "@/lib/generate-report-pdf";
-import { ExplanationEvaluationSection } from "@/components/demo/explanation-evaluation-section";
 import type { DetectionResponse } from "@/lib/types";
 
 function faithfulnessPct(result: DetectionResponse): string {
@@ -167,7 +165,8 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
       </GlassCard>
 
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        Detailed forensic breakdown · corrupted zones: {corruptedNames}
+        Detailed forensic breakdown · corrupted zones: {corruptedNames} · see Panel 3
+        for per-explanation accuracy
       </p>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -267,14 +266,26 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
               />
             </Figure>
             {result.mask_ground_truth?.available && result.mask_ground_truth.overlay ? (
-              <Figure label="FF++ mask GT (green = true edit)">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={result.mask_ground_truth.overlay}
-                  alt="Mask ground truth"
-                  className="mx-auto max-h-56 w-full object-contain"
-                />
-              </Figure>
+              <>
+                <Figure label="GT overlay (edited pixels highlighted)">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={result.mask_ground_truth.overlay}
+                    alt="Mask ground truth overlay"
+                    className="mx-auto max-h-56 w-full object-contain"
+                  />
+                </Figure>
+                {result.mask_ground_truth.mask_pixels ? (
+                  <Figure label="Edited pixels only (GT)">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={result.mask_ground_truth.mask_pixels}
+                      alt="Manipulated pixels only"
+                      className="mx-auto max-h-56 w-full bg-black object-contain"
+                    />
+                  </Figure>
+                ) : null}
+              </>
             ) : (
               <Figure label="Manipulation mask GT">
                 <p className="flex min-h-[8rem] items-center justify-center px-4 text-center text-xs text-slate-500">
@@ -527,20 +538,11 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           )}
         </SectionCard>
 
-        {/* 6. Explanation evaluation */}
-        <SectionCard
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          title="6. How Trustworthy Are These Explanations?"
-          className="xl:col-span-2"
-        >
-          <ExplanationEvaluationSection result={result} />
-        </SectionCard>
-
-        {/* 7. Video timeline */}
+        {/* 6. Video timeline */}
         {result.mode === "video" && result.timeline.length > 0 && (
           <SectionCard
             icon={<Activity className="h-4 w-4" />}
-            title="7. Per-Frame Suspicion Timeline"
+            title="6. Per-Frame Suspicion Timeline"
             className="xl:col-span-2"
           >
             <div className="overflow-x-auto rounded-xl border border-white/10">
