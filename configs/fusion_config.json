@@ -28,20 +28,19 @@
   "zone_threshold_quantile": 0.85,
   "evidence_weight": 10.0,
   "threshold_ceiling_margin": 0.05,
-  "max_flagged_zones": 3,
-  "min_fake_probability_for_explanations": 0.7,
+  "max_flagged_zones": null,
+  "min_fake_probability_for_explanations": 0.0,
   "causal_min_drop": 0.03,
   "beta_for_fusion": "posterior_mean",
   "research_policy": {
-    "name": "precision_first_v1",
+    "name": "threshold_based_v1",
     "rules": [
       "No zone flags when classifier label is Real",
-      "No zone flags when P(fake) < min_fake_probability_for_explanations",
       "Emit NL when Q(z) > per-zone calibrated threshold (strict, real q85)",
       "Live demos: causal occlusion is an optional badge, not a hard delete of claims",
       "Fusion R(z) uses β posterior mean so attention and gradient both contribute"
     ],
-    "claim_scope": "Flagged zones are high-precision localisation of model anomaly mass. On FF++ masks, flagged-zone precision and pointing-game accuracy are the primary localisation claims \u2014 not that every manipulated pixel is recovered (recall is intentionally low).",
+    "claim_scope": "Flagged zones exceed the real-face calibrated Q(z) threshold for that region. All threshold-clearing zones on Fake verdicts receive a natural-language claim.",
     "calibration_real_pass_rate_mean": 0.15,
     "calibration_fake_pass_rate_mean": 0.2743,
     "per_zone_real_pass_rate": {

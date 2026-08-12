@@ -119,10 +119,29 @@ def test_real_never_flags_even_when_scores_clear_thresholds(
     assert out.R_scores.shape == (9,)
 
 
-def test_weak_fake_below_confidence_gate_emits_no_flags(
+def test_weak_fake_emits_flags_when_above_threshold(
     sample_landmarks_68, sample_alpha, sample_phi
 ):
-    """P(fake)=0.55 is Fake but below the 0.70 research confidence gate."""
+    """P(fake)=0.55 is Fake; with default min_p=0, zones above threshold are flagged."""
+    out = predict_label_and_explanation(
+        attention_vec=sample_alpha,
+        landmarks_68=sample_landmarks_68,
+        phi_vec=sample_phi,
+        beta=0.5,
+        fake_probability=0.55,
+        min_severity="low",
+        zone_thresholds={zone: 0.0 for zone in ZONE_NAMES},
+        zone_prior_model=ZonePriorModel(),
+    )
+    assert out.label == "Fake"
+    assert len(out.concept_vectors) > 0
+    assert len(out.nl_explanations) > 0
+
+
+def test_optional_fake_probability_floor_blocks_weak_fake(
+    sample_landmarks_68, sample_alpha, sample_phi
+):
+    """Legacy min_p=0.70 floor suppresses claims when explicitly set."""
     out = predict_label_and_explanation(
         attention_vec=sample_alpha,
         landmarks_68=sample_landmarks_68,

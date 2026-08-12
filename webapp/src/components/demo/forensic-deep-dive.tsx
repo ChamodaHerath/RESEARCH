@@ -16,6 +16,7 @@ import {
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { generateReportPdf } from "@/lib/generate-report-pdf";
+import { ExplanationEvaluationSection } from "@/components/demo/explanation-evaluation-section";
 import type { DetectionResponse } from "@/lib/types";
 
 function faithfulnessPct(result: DetectionResponse): string {
@@ -55,21 +56,11 @@ function whyZeroZones(result: DetectionResponse): string {
           .join("; ")
       : null;
 
-  if (confPct <= 70) {
-    return (
-      `No semantic sentences were emitted.` +
-      (zoneList
-        ? ` Candidate / elevated zones: ${zoneList}.`
-        : ` No zone clearly exceeded its calibrated threshold.`) +
-      ` Fake confidence is ${confPct.toFixed(1)}% (needs > 70% for NL claims).`
-    );
-  }
-
   return (
     `No semantic sentences were emitted.` +
     (zoneList
       ? ` Elevated region scores: ${zoneList}.`
-      : ` No region crossed the calibrated Q(z) threshold.`) +
+      : ` No zone exceeded its calibrated threshold.`) +
     ` Fake confidence is ${confPct.toFixed(1)}%.`
   );
 }
@@ -90,7 +81,6 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
   const flagged = ranked.filter((r) => r.flagged);
   const clearsThr = ranked.filter((r) => r.clears_threshold && !r.flagged);
   const live = result.explanation_validation?.live;
-  const maskVal = result.explanation_validation?.mask_ground_truth_validation;
   const heatmapSrc = result.heatmap || result.attention_map;
   const pFake = result.confidence; // Fake verdict → displayed conf is P(fake)
 
@@ -141,42 +131,38 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           Corrupted facial zones (this Fake verdict)
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-200">
-          <span className="font-semibold text-white">Officially claimed corrupted: </span>
+          <span className="font-semibold text-white">Officially claimed corrupted: </span><br/>
           {flagged.length > 0 ? (
             <>
               {flagged.map((r, i) => (
                 <span key={r.region}>
-                  {i > 0 ? "; " : ""}
+                  {i > 0 ? " " : ""}
                   <span className="font-medium text-red-300">{r.label}</span>
                   {" "}
                   (score {pct(r.anomalyScore)}
                   {r.threshold != null ? `, thr ${pct(r.threshold)}` : ""}
                   {r.Q != null ? `, Q=${r.Q.toFixed(4)}` : ""}
                   {r.flag_reason ? `, ${r.flag_reason}` : ""})
-                </span>
+                <br/></span> 
               ))}
-              .
+              
             </>
           ) : (
             <span className="text-amber-200">
-              no zone was retained as a corrupted claim after the research gates
-              (Fake + P(fake) &gt; 70% + Q(z) vs calibrated threshold).
+              no zone exceeded its calibrated threshold on this Fake frame.
             </span>
           )}
-        </p>
+        </p> 
         {clearsThr.length > 0 && (
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            Cleared threshold but not yet in the claimed set (should be rare under
-            the live demo policy):{" "}
+            Cleared threshold but not claimed (unexpected):{" "}
             {clearsThr.map((r) => `${r.label} (${pct(r.anomalyScore)})`).join("; ")}.
           </p>
         )}
         <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
           “Corrupted / claimed” means Q(z) cleared the real-face calibrated
-          threshold for this Fake frame — not a pixel-perfect claim that every
-          pixel in that zone was edited. Causal occlusion is an optional badge,
-          not required to emit the sentence. Compare with the FF++ mask GT when
-          available.
+          threshold for this Fake frame and received a natural-language
+          explanation.
         </p>
       </GlassCard>
 
@@ -199,7 +185,6 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
               ["Mode", result.mode],
               ["Processing time", result.processing_time],
               ["Input file", result.report.inputFile],
-              ["SHA-256", result.report.hashValue],
               ["Verdict", "FAKE"],
               ["P(fake) / confidence", `${pFake.toFixed(2)}%`],
               ["Risk level", result.riskLevel],
@@ -207,34 +192,10 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           />
         </SectionCard>
 
-        {/* 2. Confidence breakdown */}
-        <SectionCard
-          icon={<Activity className="h-4 w-4" />}
-          title="2. Confidence Breakdown (pipeline metrics)"
-        >
-          {result.confidence_breakdown.length === 0 ? (
-            <p className="text-sm text-slate-500">No breakdown metrics returned.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {result.confidence_breakdown.map((c) => (
-                <li
-                  key={c.metric}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
-                >
-                  <span className="text-xs text-slate-400">{c.metric}</span>
-                  <span className="font-mono text-sm font-semibold text-white">
-                    {c.value}%
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SectionCard>
-
-        {/* 3. Why Fake — classification reasoning */}
+        {/* 2. Why Fake — classification reasoning */}
         <SectionCard
           icon={<BookOpen className="h-4 w-4" />}
-          title="3. Why the Model Classified This as Fake"
+          title="2. Why the Model Classified This as Fake"
           className="xl:col-span-2"
         >
           <p className="mb-3 text-sm leading-relaxed text-slate-300">
@@ -252,7 +213,7 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
                       })`
                   )
                   .join("; ")
-              : "none after research gates — see zone table and §6 for why claims were withheld."}
+              : "none — no zone score exceeded its calibrated threshold"}
           </p>
           <ol className="flex flex-col gap-3">
             {(result.classification_reasoning?.steps ?? []).map((step, i) => (
@@ -282,10 +243,10 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           </ol>
         </SectionCard>
 
-        {/* 4. Visual evidence */}
+        {/* 3. Visual evidence */}
         <SectionCard
           icon={<Layers className="h-4 w-4" />}
-          title="4. Visual Evidence"
+          title="3. Visual Evidence"
           className="xl:col-span-2"
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -331,15 +292,15 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           )}
         </SectionCard>
 
-        {/* 5. Zone table — full R/Q/thr */}
+        {/* 4. Zone table — full R/Q/thr */}
         <SectionCard
           icon={<Crosshair className="h-4 w-4" />}
-          title="5. Zone Scores — R(z), Q(z), Thresholds"
+          title="4. Zone Scores — R(z), Q(z), Thresholds"
           className="xl:col-span-2"
         >
           <p className="mb-3 text-xs text-slate-400">
             Display score is Q(z) when Bayesian zone priors are active (else R(z)).
-            Claimed = Fake + P(fake) gate + Score &gt; Threshold → NL semantic explanation.
+            Claimed = Fake verdict + Score &gt; Threshold → NL semantic explanation.
           </p>
           <div className="overflow-x-auto rounded-xl border border-white/10">
             <table className="w-full min-w-[720px] border-collapse text-left text-xs">
@@ -452,14 +413,12 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
               <li>
                 <span className="font-medium text-slate-300">Threshold</span> —
                 per-zone calibrated cut on Q(z) (or R(z)): the 85th percentile of
-                real held-out faces for that zone (research precision-first
-                policy). A zone must score strictly above this value to be a
-                candidate claim.
+                real held-out faces for that zone. A zone must score strictly
+                above this value to receive a semantic claim on Fake verdicts.
               </li>
               <li>
                 <span className="font-medium text-slate-300">Clears thr</span> —
-                Yes if verdict is Fake, P(fake) exceeds the explanation gate
-                (~0.70), and Score &gt; Threshold.
+                Yes when verdict is Fake and Score &gt; Threshold.
               </li>
               <li>
                 <span className="font-medium text-slate-300">Claimed</span> — Yes
@@ -476,10 +435,10 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           </div>
         </SectionCard>
 
-        {/* 6. Semantic NL claims */}
+        {/* 5. Semantic NL claims */}
         <SectionCard
           icon={<FileText className="h-4 w-4" />}
-          title="6. Semantic Explanations (NL Claims)"
+          title="5. Semantic Explanations (NL Claims)"
           className="xl:col-span-2"
         >
           <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -568,125 +527,20 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
           )}
         </SectionCard>
 
-        {/* 7. Explanation validation */}
+        {/* 6. Explanation evaluation */}
         <SectionCard
           icon={<CheckCircle2 className="h-4 w-4" />}
-          title="7. Explanation Validation (Live + Offline GT)"
+          title="6. How Trustworthy Are These Explanations?"
           className="xl:col-span-2"
         >
-          {live ? (
-            <>
-              <KvGrid
-                rows={[
-                  ["Claims this request", String(live.n_claims)],
-                  [
-                    "Causal measured",
-                    live.causal_gate_enabled
-                      ? `Yes (min drop ${live.causal_min_drop ?? "—"})`
-                      : "No",
-                  ],
-                  ["Zones causally tested", String(live.causal_zones_tested)],
-                  [
-                    "Causal-verified (badge)",
-                    `${live.causal_claims_retained}${
-                      live.causal_retention_rate != null
-                        ? ` (${pct(live.causal_retention_rate, 0)})`
-                        : ""
-                    }`,
-                  ],
-                ]}
-              />
-              <p className="mt-2 text-xs text-slate-500">{live.note}</p>
-              <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                Causal Δ is P(fake before occluding the zone) − P(fake after).
-                A green causal-pass badge means the drop met the minimum; the
-                NL claim is still shown either way under the live demo policy.
-              </p>
-              {live.per_claim.length > 0 && (
-                <div className="mt-3 overflow-x-auto rounded-xl border border-white/10">
-                  <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-white/10 bg-white/[0.04] text-slate-400">
-                        <th className="px-3 py-2">Zone</th>
-                        <th className="px-3 py-2">Artifact</th>
-                        <th className="px-3 py-2">Causal Δ</th>
-                        <th className="px-3 py-2">Causal pass</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {live.per_claim.map((c, i) => (
-                        <tr key={`${c.zone}-${i}`} className="border-b border-white/5">
-                          <td className="px-3 py-2 text-slate-200">{c.zone}</td>
-                          <td className="px-3 py-2 text-slate-400">{c.artifact_type}</td>
-                          <td className="px-3 py-2 font-mono text-slate-300">
-                            {c.causal_drop != null ? c.causal_drop.toFixed(4) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-300">
-                            {c.causal_passed == null
-                              ? "—"
-                              : c.causal_passed
-                                ? "Yes"
-                                : "No"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-slate-500">No live validation payload.</p>
-          )}
-
-          {maskVal && (
-            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-300">
-                Offline FF++ mask-GT research metrics
-              </p>
-              <KvGrid
-                rows={[
-                  ["Dataset", maskVal.dataset],
-                  [
-                    "Frames evaluated",
-                    maskVal.n_frames_evaluated != null
-                      ? String(maskVal.n_frames_evaluated)
-                      : "—",
-                  ],
-                  [
-                    "Precision",
-                    maskVal.precision != null ? pct(maskVal.precision, 2) : "—",
-                  ],
-                  [
-                    "Pointing-game accuracy",
-                    maskVal.pointing_game_accuracy != null
-                      ? pct(maskVal.pointing_game_accuracy, 2)
-                      : "—",
-                  ],
-                  [
-                    "Zone-score AUC (micro)",
-                    maskVal.zone_score_auc_micro != null
-                      ? maskVal.zone_score_auc_micro.toFixed(4)
-                      : "—",
-                  ],
-                ]}
-              />
-              <p className="mt-2 text-xs text-slate-400">{maskVal.scope_note}</p>
-            </div>
-          )}
-
-          {result.explanation_validation?.novel_contribution_note && (
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">
-              {result.explanation_validation.novel_contribution_note}
-            </p>
-          )}
+          <ExplanationEvaluationSection result={result} />
         </SectionCard>
 
-        {/* 8. Video timeline */}
+        {/* 7. Video timeline */}
         {result.mode === "video" && result.timeline.length > 0 && (
           <SectionCard
             icon={<Activity className="h-4 w-4" />}
-            title="8. Per-Frame Suspicion Timeline"
+            title="7. Per-Frame Suspicion Timeline"
             className="xl:col-span-2"
           >
             <div className="overflow-x-auto rounded-xl border border-white/10">
@@ -719,17 +573,17 @@ export function ForensicDeepDive({ result }: { result: DetectionResponse }) {
         )}
 
         {/* 9. Terminal log dump */}
-        {result.terminal_logs.length > 0 && (
+        {/* {result.terminal_logs.length > 0 && (
           <SectionCard
             icon={<FileText className="h-4 w-4" />}
-            title={`${result.mode === "video" && result.timeline.length > 0 ? "9" : "8"}. Pipeline Terminal Log`}
+            title={`${result.mode === "video" && result.timeline.length > 0 ? "8" : "7"}. Pipeline Terminal Log`}
             className="xl:col-span-2"
           >
             <pre className="max-h-56 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-[11px] leading-relaxed text-slate-400">
               {result.terminal_logs.join("\n")}
             </pre>
           </SectionCard>
-        )}
+        )} */}
       </div>
     </motion.div>
   );

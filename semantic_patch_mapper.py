@@ -1135,7 +1135,7 @@ def predict_label_and_explanation(
     zone_prior_model=None,
     zone_thresholds: Optional[Mapping[str, float]] = None,
     max_flagged_zones: Optional[int] = None,
-    min_fake_probability_for_explanations: float = 0.70,
+    min_fake_probability_for_explanations: float = 0.0,
 ) -> ExplanationOutput:
     """
     Full SAEDF inference pipeline for one frame.
@@ -1155,8 +1155,9 @@ def predict_label_and_explanation(
       8. Build concept vectors for flagged zones (Bayesian artifact selection if
          artifact_prior is provided, else deterministic rank-0 fallback).
          Zone flagging uses Q(z) when available, else R(z).
-         Research-grade gate: no flags when label is Real OR when
-         P(fake) < min_fake_probability_for_explanations.
+         Gate: no flags when label is Real. When
+         min_fake_probability_for_explanations > 0, also require
+         P(fake) above that floor (legacy; default 0 = threshold-only).
       9. Generate and verify NL explanations.
 
     Args:
@@ -1184,8 +1185,8 @@ def predict_label_and_explanation(
                            computes posterior zone anomaly probabilities Q(z).
         zone_thresholds  : optional per-zone Q(z) cutoffs from fusion_config.
         max_flagged_zones: optional cap on flagged zones.
-        min_fake_probability_for_explanations: P(fake) must exceed this before
-                           any zone is flagged (default 0.70).
+        min_fake_probability_for_explanations: optional P(fake) floor before
+                           zone flags (default 0 = threshold-only for Fake).
 
     Returns:
         ExplanationOutput with label, concept vectors, NL sentences, and
@@ -1268,14 +1269,16 @@ def predict_label_and_explanation(
             ci_lower_arr = np.array([q_ci_lower_dict[z] for z in ZONE_NAMES], dtype=np.float32)
             ci_upper_arr = np.array([q_ci_upper_dict[z] for z in ZONE_NAMES], dtype=np.float32)
 
-    # Label + research-grade explanation gate.
-    # Manipulation claims require: Fake verdict AND confident P(fake).
-    # Real / weak-Fake still get R/Q scores for the region table, but zero
-    # flags / NL sentences. Thresholds alone are real-face quantiles, so
-    # authentic faces would otherwise produce false forensic claims.
+    # Label + explanation gate.
+    # Manipulation claims require a Fake verdict; optional P(fake) floor when
+    # min_fake_probability_for_explanations > 0. Real frames still get R/Q
+    # scores for the region table but zero flags / NL sentences.
     label = "Fake" if fake_probability >= 0.5 else "Real"
     min_p = float(min_fake_probability_for_explanations)
-    allow_explanations = label == "Fake" and float(fake_probability) > min_p
+    allow_explanations = (
+        label == "Fake"
+        and (min_p <= 0.0 or float(fake_probability) > min_p)
+    )
 
     if not allow_explanations:
         cvs = []
@@ -1357,7 +1360,7 @@ class SemanticExplanationGenerator:
             int(cfg["max_flagged_zones"]) if cfg.get("max_flagged_zones") is not None else None
         )
         self.min_fake_probability_for_explanations: float = float(
-            cfg.get("min_fake_probability_for_explanations", 0.70)
+            cfg.get("min_fake_probability_for_explanations", 0.0)
         )
         self.causal_min_drop: float = float(cfg.get("causal_min_drop", 0.03))
         self.research_policy: Optional[Dict] = cfg.get("research_policy")

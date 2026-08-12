@@ -38,7 +38,7 @@ export function ResultsPanel({
                 Awaiting Analysis
               </h3>
               <p className="max-w-md text-sm text-slate-500">
-                Upload media above and run detection to view prediction, zones, and heatmap here.
+                Upload media above and run detection to view the verdict here.
               </p>
             </GlassCard>
           </motion.div>
@@ -79,37 +79,40 @@ export function ResultsPanel({
                 confidence={result.confidence}
                 riskLevel={result.riskLevel}
                 processingTime={result.processing_time}
-                breakdown={result.confidence_breakdown}
               />
             </FadeItem>
             {result.classification_reasoning && (
-              <FadeItem index={1}>
+              <FadeItem index={1} className={result.prediction === "Real" ? "lg:col-span-2" : undefined}>
                 <ClassificationTheoryCard
                   reasoning={result.classification_reasoning}
                   prediction={result.prediction}
                 />
               </FadeItem>
             )}
-            <FadeItem index={2}>
-              <FacialRegionsCard regions={result.facial_regions} />
-            </FadeItem>
-            <FadeItem index={3}>
-              <SemanticExplanationsCard explanations={result.semantic_explanations} />
-            </FadeItem>
-            <FadeItem index={4}>
-              <HeatmapCard beforeImage={result.faceCrop} afterImage={result.heatmap} />
-            </FadeItem>
-            {result.mask_ground_truth?.available && result.mask_ground_truth.overlay && (
-              <FadeItem index={5}>
-                <MaskGroundTruthCard
-                  beforeImage={result.faceCrop}
-                  maskGt={result.mask_ground_truth}
-                />
-              </FadeItem>
+            {result.prediction === "Fake" && (
+              <>
+                <FadeItem index={2}>
+                  <FacialRegionsCard regions={result.facial_regions} />
+                </FadeItem>
+                <FadeItem index={3}>
+                  <SemanticExplanationsCard explanations={result.semantic_explanations} />
+                </FadeItem>
+                <FadeItem index={4}>
+                  <HeatmapCard beforeImage={result.faceCrop} afterImage={result.heatmap} />
+                </FadeItem>
+                {result.mask_ground_truth?.available && result.mask_ground_truth.overlay && (
+                  <FadeItem index={5}>
+                    <MaskGroundTruthCard
+                      beforeImage={result.faceCrop}
+                      maskGt={result.mask_ground_truth}
+                    />
+                  </FadeItem>
+                )}
+              </>
             )}
             {result.mode === "video" && result.timeline.length > 0 && (
               <FadeItem
-                index={6}
+                index={result.prediction === "Fake" ? 6 : 2}
                 className="lg:col-span-2"
               >
                 <TimelineCard markers={result.timeline} />

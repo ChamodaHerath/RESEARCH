@@ -582,7 +582,7 @@ def build_classification_reasoning(
 
     steps: List[Dict[str, str]] = [
         {
-            "stage": "ViT classifier (softmax)",
+            "stage": "ViT classifier",
             "formula": "P(fake | x) = softmax(logits)[fake]",
             "value": f"{fake_probability:.4f}",
             "interpretation": (
@@ -738,14 +738,7 @@ def build_facial_regions(explanation: ExplanationOutput, bundle: ModelBundle) ->
     zone_thresholds = getattr(bundle.explainer, "zone_thresholds", None) or {}
     min_severity = getattr(bundle.explainer, "min_severity", "medium")
     flagged_by_cv = {cv.zone: cv for cv in explanation.concept_vectors}
-    # Claimed / flagged = Fake + confident P(fake) + score > thr (concept vector).
-    min_p = float(
-        getattr(bundle.explainer, "min_fake_probability_for_explanations", 0.70)
-    )
-    allow_flags = (
-        explanation.label == "Fake"
-        and float(explanation.fake_probability) > min_p
-    )
+    is_fake = explanation.label == "Fake"
 
     regions: List[Dict] = []
     for i, zone in enumerate(ZONE_NAMES):
@@ -760,7 +753,7 @@ def build_facial_regions(explanation: ExplanationOutput, bundle: ModelBundle) ->
         threshold = float(
             zone_thresholds.get(zone, SEVERITY_THRESHOLDS.get(min_severity, 0.50))
         )
-        clears_thr = allow_flags and round(score, 4) > round(threshold, 4)
+        clears_thr = is_fake and round(score, 4) > round(threshold, 4)
         cv = flagged_by_cv.get(zone)
         # Authoritative claim = concept vector present (threshold-clearing NL).
         is_flagged = cv is not None
@@ -929,11 +922,7 @@ def build_explanation_validation(explanation: ExplanationOutput) -> Dict:
             ),
         },
         "mask_ground_truth_validation": mask_gt,
-        "novel_contribution_note": (
-            "Contribution: dual-head SAEDF with Bayesian zone fusion + calibrated "
-            "threshold claims, optional causal occlusion badges, and offline FF++ "
-            "mask-GT localisation evaluation."
-        ),
+        
     }
 
 
@@ -1074,7 +1063,6 @@ def infer_image():
         "attention_map": heatmap_b64,
         "faceCrop": face_crop_b64,
         "mask_ground_truth": mask_gt,
-        "confidence_breakdown": build_confidence_breakdown(explanation, bundle),
         "classification_reasoning": build_classification_reasoning(
             explanation, fake_probability, bundle
         ),

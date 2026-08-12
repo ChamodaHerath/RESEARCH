@@ -4,20 +4,17 @@ import { motion } from "framer-motion";
 import { ShieldAlert, ShieldCheck, AlertTriangle } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { ConfidenceGauge } from "./confidence-gauge";
-import type { ConfidenceBreakdown } from "@/lib/types";
 
 export function PredictionCard({
   prediction,
   confidence,
   riskLevel,
   processingTime,
-  breakdown,
 }: {
   prediction: "Real" | "Fake";
   confidence: number;
   riskLevel: string;
   processingTime: string;
-  breakdown: ConfidenceBreakdown[];
 }) {
   const isFake = prediction === "Fake";
   const color = isFake ? "#ef4444" : "#22c55e";
@@ -59,25 +56,6 @@ export function PredictionCard({
         </motion.div>
 
         <ConfidenceGauge value={confidence} color={color} />
-      </div>
-
-      <div className="flex flex-col gap-3 border-t border-white/10 pt-5">
-        {breakdown.map((item, i) => (
-          <div key={item.metric} className="flex items-center gap-3">
-            <span className="w-40 shrink-0 truncate text-xs text-slate-400">{item.metric}</span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${item.value}%` }}
-                transition={{ duration: 0.9, delay: i * 0.08, ease: "easeOut" }}
-                className="h-full rounded-full bg-gradient-to-r from-primary to-secondary"
-              />
-            </div>
-            <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-300">
-              {item.value}%
-            </span>
-          </div>
-        ))}
       </div>
     </GlassCard>
   );

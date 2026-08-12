@@ -46,9 +46,9 @@ def parse_args():
     p.add_argument(
         "--min-fake-probability",
         type=float,
-        default=0.70,
-        help="Classifier P(fake) must exceed this before any zone is flagged. "
-             "Prevents weak/uncertain Fake verdicts from emitting forensic claims.",
+        default=0.0,
+        help="Optional classifier P(fake) floor before any zone is flagged "
+             "(default 0 = threshold-only for Fake verdicts).",
     )
     p.add_argument(
         "--causal-min-drop",
@@ -71,7 +71,7 @@ def parse_args():
         help="Keep each zone threshold ≤ max_reachable_Q(z) − margin so a "
              "zone with strong R(z) can still clear the bar.",
     )
-    p.add_argument("--max-flagged-zones", type=int, default=3)
+    p.add_argument("--max-flagged-zones", type=int, default=None)
     return p.parse_args()
 
 
@@ -245,19 +245,17 @@ def main():
         "causal_min_drop": float(args.causal_min_drop),
         "beta_for_fusion": "posterior_mean",
         "research_policy": {
-            "name": "precision_first_v1",
+            "name": "threshold_based_v1",
             "rules": [
                 "No zone flags when classifier label is Real",
-                "No zone flags when P(fake) < min_fake_probability_for_explanations",
                 "Flag only when Q(z) > per-zone calibrated threshold (strict, real q85)",
-                "Live demos: retain claim only if causal occlusion drops P(fake)",
+                "Live demos: causal occlusion is an optional badge, not a hard delete of claims",
                 "Fusion R(z) uses β posterior mean so attention and gradient both contribute",
             ],
             "claim_scope": (
-                "Flagged zones are high-precision localisation of model anomaly "
-                "mass. On FF++ masks, flagged-zone precision and pointing-game "
-                "accuracy are the primary localisation claims — not that every "
-                "manipulated pixel is recovered (recall is intentionally low)."
+                "Flagged zones exceed the real-face calibrated Q(z) threshold "
+                "for that region. All threshold-clearing zones on Fake verdicts "
+                "receive a natural-language claim."
             ),
             "calibration_real_pass_rate_mean": round(
                 float(np.mean(list(real_pass_rates.values()))), 4

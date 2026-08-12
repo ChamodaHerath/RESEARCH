@@ -56,21 +56,11 @@ function whyZeroZones(result: DetectionResponse): string {
     );
   }
 
-  if (pFakePct <= 70) {
-    return (
-      "No semantic sentences were emitted." +
-      (zoneList
-        ? ` Candidate / elevated zones: ${zoneList}.`
-        : " No zone clearly exceeded its calibrated threshold.") +
-      ` Fake confidence is ${pFakePct.toFixed(1)}% (needs > 70% for NL claims).`
-    );
-  }
-
   return (
     "No semantic sentences were emitted." +
     (zoneList
       ? ` Elevated region scores: ${zoneList}.`
-      : " No region crossed the calibrated Q(z) threshold.") +
+      : " No zone exceeded its calibrated threshold.") +
     ` Fake confidence is ${pFakePct.toFixed(1)}%.`
   );
 }
@@ -241,7 +231,6 @@ export function generateReportPdf(result: DetectionResponse) {
   keyValueRow("Mode", result.mode);
   keyValueRow("Processing Time", result.processing_time);
   keyValueRow("Input File", result.report.inputFile);
-  keyValueRow("Hash (SHA-256)", result.report.hashValue);
   y += 4;
 
   // 2. Classification head
@@ -462,29 +451,29 @@ export function generateReportPdf(result: DetectionResponse) {
     }
   }
 
-  if (maskVal) {
-    sectionTitle("6. Offline FF++ Mask-GT Research Metrics");
-    keyValueRow("Dataset", maskVal.dataset);
-    if (maskVal.n_frames_evaluated != null) {
-      keyValueRow("Frames evaluated", String(maskVal.n_frames_evaluated));
-    }
-    if (maskVal.precision != null) {
-      keyValueRow("Precision", `${(maskVal.precision * 100).toFixed(2)}%`);
-    }
-    if (maskVal.pointing_game_accuracy != null) {
-      keyValueRow(
-        "Pointing-game accuracy",
-        `${(maskVal.pointing_game_accuracy * 100).toFixed(2)}%`
-      );
-    }
-    if (maskVal.zone_score_auc_micro != null) {
-      keyValueRow(
-        "Zone-score AUC (micro)",
-        maskVal.zone_score_auc_micro.toFixed(4)
-      );
-    }
-    paragraph(maskVal.scope_note, 8.5);
-  }
+  // if (maskVal) {
+  //   sectionTitle("6. Offline FF++ Mask-GT Research Metrics");
+  //   keyValueRow("Dataset", maskVal.dataset);
+  //   if (maskVal.n_frames_evaluated != null) {
+  //     keyValueRow("Frames evaluated", String(maskVal.n_frames_evaluated));
+  //   }
+  //   if (maskVal.precision != null) {
+  //     keyValueRow("Precision", `${(maskVal.precision * 100).toFixed(2)}%`);
+  //   }
+  //   if (maskVal.pointing_game_accuracy != null) {
+  //     keyValueRow(
+  //       "Pointing-game accuracy",
+  //       `${(maskVal.pointing_game_accuracy * 100).toFixed(2)}%`
+  //     );
+  //   }
+  //   if (maskVal.zone_score_auc_micro != null) {
+  //     keyValueRow(
+  //       "Zone-score AUC (micro)",
+  //       maskVal.zone_score_auc_micro.toFixed(4)
+  //     );
+  //   }
+  //   paragraph(maskVal.scope_note, 8.5);
+  // }
 
   if (result.explanation_validation?.novel_contribution_note) {
     paragraph(result.explanation_validation.novel_contribution_note, 8.5);

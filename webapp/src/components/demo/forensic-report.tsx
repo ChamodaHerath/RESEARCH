@@ -64,21 +64,11 @@ function whyZeroZones(result: DetectionResponse): string {
     );
   }
 
-  if (pFakePct <= 70) {
-    return (
-      `No semantic sentences were emitted.` +
-      (zoneList
-        ? ` Candidate / elevated zones: ${zoneList}.`
-        : ` No zone clearly exceeded its calibrated threshold.`) +
-      ` Fake confidence is ${pFakePct.toFixed(1)}% (needs > 70% for NL claims).`
-    );
-  }
-
   return (
     `No semantic sentences were emitted.` +
     (zoneList
       ? ` Elevated region scores: ${zoneList}.`
-      : ` No region crossed the calibrated Q(z) threshold.`) +
+      : ` No zone exceeded its calibrated threshold.`) +
     ` Fake confidence is ${pFakePct.toFixed(1)}%.`
   );
 }
@@ -141,7 +131,6 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
                   ["Model Version", result.report.modelVersion],
                   ["Processing Time", result.processing_time],
                   ["Input File", result.report.inputFile],
-                  ["Hash Value (SHA-256)", `${result.report.hashValue.slice(0, 24)}…`],
                 ]}
               />
             </ReportSection>
