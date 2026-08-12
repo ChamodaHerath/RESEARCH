@@ -32,8 +32,8 @@ export function Hero() {
             custom={1}
             className="font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.4rem]"
           >
-            Explainable Deepfake Detection using{" "}
-            <span className="animated-gradient-text">Vision Transformers</span>
+            Extended Explainable Vision Transformer  {" "}
+            <span className="animated-gradient-text">Framework For Deepfake Detection</span>
           </motion.h1>
 
           <motion.p

@@ -16,13 +16,13 @@ export function Footer() {
             </span>
           </Link>
           <p className="max-w-sm text-sm leading-relaxed text-slate-400">
-            Explainable Deepfake Detection using Vision Transformers — an AI-powered
+            Extended Explainable Vision Transformer Framework For Deepfake Detection — an AI-powered
             digital forensic research platform combining transformer-based attention
             analysis with human-readable semantic explanations.
           </p>
           <div className="flex items-center gap-3 pt-2">
             <a
-              href="https://github.com"
+              href="https://github.com/ChamodaHerath"
               target="_blank"
               rel="noreferrer"
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition-colors hover:border-primary/50 hover:text-white"
@@ -30,7 +30,7 @@ export function Footer() {
               <GithubIcon className="h-4 w-4" />
             </a>
             <a
-              href="mailto:research@explaindeep.ai"
+              href="mailto:herathhmcd.21@uom.lk"
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition-colors hover:border-primary/50 hover:text-white"
             >
               <Mail className="h-4 w-4" />

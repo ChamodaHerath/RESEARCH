@@ -1,25 +1,11 @@
 """
-analyze.py — SAEDF forensic analysis from a raw image or video file.
-
-Accepts any JPEG/PNG image or MP4/AVI/MOV video.  For each detected face
-frame the pipeline runs:
-  • MTCNN face detection
-  • dlib 68-point landmark extraction
-  • SAEDFPipeline (single ViT forward pass → classification + explanation)
-  • Printed ForensicReport in the terminal (and optional JSON export)
-
-For videos, every --frame-step frame is analysed (default 1 = all frames).
-A per-video aggregate verdict is printed at the end.
-
-Usage
------
     # Single image
     python analyze.py --input face.jpg
 
     # Video — analyse every frame, save JSON report
     python analyze.py --input clip.mp4 --output report.json
 
-    # Video — every 5th frame only (faster for long videos)
+    # Video — every 5th frame only 
     python analyze.py --input clip.mp4 --frame-step 5
 
     # Specify severity threshold and dlib predictor path
@@ -43,19 +29,13 @@ from mtcnn import MTCNN
 from pipeline import SAEDFPipeline
 from semantic_patch_mapper import ForensicReport
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+
 IMAGE_SIZE = 224
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff"}
 VIDEO_EXTENSIONS  = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"}
 
 DEFAULT_PREDICTOR = "shape_predictor_68_face_landmarks.dat"
 
-
-# ---------------------------------------------------------------------------
-# Face detection + landmark extraction helpers
-# ---------------------------------------------------------------------------
 
 def _load_predictor(predictor_path: str) -> dlib.shape_predictor:
     p = Path(predictor_path)
@@ -144,7 +124,7 @@ def preprocess_frame(
 
 
 # ---------------------------------------------------------------------------
-# Video aggregation — one report for the entire video
+# Video aggregation 
 # ---------------------------------------------------------------------------
 
 _SEVERITY_ADJ = {"high": "High-confidence", "medium": "Moderate", "low": "Low-confidence"}

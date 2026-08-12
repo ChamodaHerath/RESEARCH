@@ -1,9 +1,14 @@
-# Explainable Deepfake Detection Using Vision Transformers
+# Extended Explainable Vision Transformer Framework For Deepfake Detection
 
 A research pipeline that combines a Vision Transformer deepfake detector with
 a four-tier Bayesian explanation system to produce **dual-head forensic reports**:
 a classification head (fake probability + confidence tier) and a semantic
 explanation head (zone-level attribution with verified natural-language sentences).
+
+A **precision-first research policy** gates when NL claims are emitted; an optional
+**causal occlusion badge** annotates whether blanking a zone moves P(fake); and an
+**artifact evidence module** adds measurable image cues (texture, boundary, colour,
+lighting, frequency) on top of the ontology-based Dirichlet artifact head.
 
 ---
 
@@ -25,6 +30,9 @@ explanation head (zone-level attribution with verified natural-language sentence
 | 12 | Quantified method inference — 4×4 confusion matrix, frame/video accuracy, top-2 accuracy of the zone-pattern method classifier vs FF++ ground-truth labels | `evaluate_method_inference.py` |
 | 13 | Leakage-controlled detector training — official FF++ video-level splits with identity separation, ImageNet-only base model, per-checkpoint provenance record | `make_ffpp_splits.py`, `train_vit_detector.py`, `ffpp_utils.py` |
 | 14 | Statistical rigor layer — video-level metrics, cluster-bootstrap 95 % CIs, per-manipulation-method breakdown | `eval_metrics.py`, `evaluate_pipeline.py` |
+| 15 | Precision-first explanation policy — Fake + P(fake) > 0.70 gate, per-zone Q(z) thresholds at the real-face 85th percentile, max 3 claimed zones; prioritises localisation precision over recall | `recalibrate_v2.py`, `configs/fusion_config.json` |
+| 16 | Causal occlusion gate — measures ΔP(fake) per claimed zone; **hard filter** in batch `SAEDFPipeline` (default), **optional badge** in live demo (`SAEDF_CAUSAL_HARD_FILTER=0`) | `semantic_patch_mapper.py`, `pipeline.py`, `inference_server.py` |
+| 17 | Measurable artifact evidence — interpretable zone features + Bayesian artifact inference with abstention; evidence-backed NL sentences and extended faithfulness verifier | `artifact_analysis/`, `configs/artifact_evidence_config.json` |
 
 ---
 
@@ -192,29 +200,78 @@ detector above.
 │  └─────────────────────┘   │  inferred_method + probs        │ │
 │                            │  NL sentence (faithfulness ✓)   │ │
 │                            └─────────────────────────────────┘ │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 5 — Post-hoc explanation enrichment (optional)           │
+│                                                                 │
+│  Causal occlusion  — ΔP(fake) when each claimed zone is blanked │
+│    batch SAEDFPipeline: hard_filter=True (drop weak claims)     │
+│    live demo default:   hard_filter=False (causal badge only)   │
+│                                                                 │
+│  Artifact evidence   — texture / boundary / colour / lighting / │
+│    frequency features → BayesianArtifactInferencer → evidence-  │
+│    backed NL (or abstention: "no clear observable artifact")    │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Research policy: `precision_first_v1`
+
+Calibrated rules live in `configs/fusion_config.json` under `research_policy`:
+
+| Rule | Detail |
+|---|---|
+| Real verdict | No zone flags, no NL claims |
+| Weak Fake | P(fake) ≤ 0.70 → region scores only, zero NL claims |
+| Zone claim | Q(z) > per-zone threshold (real-face 85th percentile on Q scale) |
+| Cap | At most 3 claimed zones per frame (`max_flagged_zones`) |
+| Fusion | R(z) uses β posterior **mean** (attention + gradient both contribute) |
+| Causal | Live demo: optional badge; batch pipeline: hard filter by default |
+| Claim scope | High **precision** localisation of model anomaly mass — not full mask recall |
+
+On the calibration set, mean real-frame pass rate ≈ 15 % and mean fake-frame pass
+rate ≈ 27 % per zone — the thresholds are intentionally strict so emitted claims
+are sparse but trustworthy.
 
 ---
 
 ## Evaluation results
 
 Full dual-head pipeline evaluation (classification + explanation), not just
-the classifier alone. See `evaluate_pipeline.py`, results in
-`outputs/evaluation_results_ffpp.json` / `outputs/evaluation_results_celebdf.json`,
-plots in `outputs/plots/` (`roc_curve.png`, `pr_curve.png`, `calibration_curve.png`).
+the classifier alone. See `evaluate_pipeline.py`. Canonical numbers synced to
+the webapp via `python sync_webapp_data.py` →
+`webapp/src/data/eval-ffpp.json`, `eval-celebdf.json`, `zone-localization.json`.
 
-| Metric | FF++ (in-domain, 172 frames) | Celeb-DF (cross-dataset, 5179 frames) |
+### Classification head
+
+| Metric | FF++ official test (1000 frames, 4 methods) | Celeb-DF (cross-dataset, 5179 frames) |
 |---|---|---|
-| Accuracy | 99.4 % | 79.1 % |
-| AUC-ROC | 1.000 | 0.901 |
-| Average precision | 1.000 | 0.941 |
-| Precision / Recall / F1 | 1.00 / 0.988 / 0.994 | 0.931 / 0.737 / 0.822 |
-| Confusion matrix (TP/FP/TN/FN) | 85 / 0 / 86 / 1 | 2504 / 186 / 1594 / 895 |
-| ECE | 0.034 | 0.163 |
-| Brier score | 0.004 | 0.182 |
-| Mean flagged zones / fake frame | 2.97 / 9 | 1.97 / 9 |
-| Faithfulness pass rate | 100 % | 100 % |
+| Accuracy | 48.1 % | 79.1 % |
+| AUC-ROC | 0.676 | 0.901 |
+| Average precision | 0.902 | 0.941 |
+| Precision / Recall / F1 | 0.925 / 0.383 / 0.541 | 0.931 / 0.737 / 0.822 |
+| Confusion matrix (TP/FP/TN/FN) | 306 / 25 / 175 / 494 | 2504 / 186 / 1594 / 895 |
+| ECE | 0.477 | 0.163 |
+| Brier score | 0.469 | 0.182 |
+
+**Historical note — Deepfakes-only 172-frame subset (superseded protocol):**
+the earlier in-domain benchmark on 86 real / 86 fake Deepfakes frames reported
+99.4 % accuracy and AUC 1.000 with the same `hamzenium` checkpoint. That subset
+is not representative of the full four-method FF++ test split; the 1000-frame
+row above is the current thesis-facing protocol.
+
+### Explanation head (under `precision_first_v1`)
+
+| Metric | FF++ (1000 frames) | Celeb-DF (5179 frames) |
+|---|---|---|
+| Mean claimed zones / fake frame | 0.17 / 9 | 1.97 / 9 |
+| Textual faithfulness pass rate | 100 % | 100 % |
+
+Textual faithfulness checks sentence ↔ ConceptVector consistency only (see
+Limitations). It is reported separately from mask-ground-truth localisation below.
 
 **Cross-dataset calibration is honest, not perfect.** The calibration
 reliability diagram (`outputs/plots/calibration_curve.png`) shows FF++ is
@@ -246,14 +303,16 @@ well-calibrated probability rather than just a ranking score.
   Deepfakes) and stamps every fake frame with its `method`.
 
 Note: the previously reported 172-frame FF++ test set covers the Deepfakes
-method only. For thesis-grade numbers, re-preprocess the full FF++ download
-(all 4 methods), split with `make_ffpp_splits.py --official-splits`, and
-re-run the evaluation commands below so per-method results and the official
-140-video test protocol are included.
+method only. The current **1000-frame official test split** (all four methods)
+is the recommended thesis protocol. Re-run with `make_ffpp_splits.py
+--official-splits` and `evaluate_pipeline.py --json outputs/ffpp_landmarks_test_full.json`.
+
+Plots: `python plot_evaluation.py ...` → `outputs/plots/` (`roc_curve.png`,
+`pr_curve.png`, `calibration_curve.png`).
 
 ---
 
-## Ground-truth validation: are the flagged zones actually manipulated?
+## Ground-truth validation: are the claimed zones actually manipulated?
 
 The faithfulness verifier only checks that generated sentences match the
 internal ConceptVector — it cannot tell whether the ConceptVector points at a
@@ -268,9 +327,30 @@ region each synthesis method actually altered):
 2. The 9 zone convex hulls are rasterised from the frame's landmarks; a zone
    is ground-truth-manipulated when ≥ 30 % of its pixels fall inside the
    mask (`--coverage-threshold`).
-3. Flagged zones are scored against this ground truth.
+3. Claimed zones (from the precision-first policy) are scored against this ground truth.
 
-Reported metrics:
+### Mask-GT results (current run)
+
+Evaluated on **26,938 fake FF++ frames** (all four methods). Synced to
+`webapp/src/data/zone-localization.json` via `sync_webapp_data.py`.
+
+| Metric | Value | Interpretation |
+|---|---|---|
+| Zone precision (micro) | **97.7 %** | Of emitted zone claims, 97.7 % overlap GT-manipulated regions |
+| Zone recall (micro) | 6.6 % | Intentionally low — precision-first policy flags sparingly |
+| Pointing-game accuracy | **99.7 %** | Top-scored zone hits a GT-manipulated region on 99.7 % of frames |
+| Zone-score AUC (micro) | 0.690 | Rank quality of Q(z)/R(z) vs zone GT labels |
+| Deletion AUC (attr vs random) | 0.442 vs 0.414 | Attribution-ordered occlusion drops P(fake) slightly faster |
+| Insertion AUC (attr vs random) | 0.226 vs 0.229 | Comparable to random on 200-frame causal subsample |
+
+Per-method precision (all four FF++ synthesis types): **96.5 – 98.9 %**.
+
+These numbers support the primary localisation claim: **when the explanation
+head emits a zone claim, it coincides with a truly manipulated region under
+FF++ mask ground truth with very high precision.** Low recall is by design —
+the policy trades exhaustive mask coverage for examiner-facing trust.
+
+Reported metrics (full JSON):
 
 - **Localization precision / recall / F1 / IoU** — micro over all zone
   decisions, plus per-zone and per-method breakdowns. Precision answers the
@@ -302,6 +382,51 @@ script, `-d <method> -c c23 -t masks`). Run `python download_ffpp_masks.py
 videos under `FaceForensics++_C23/` are **not** valid ground truth. A landmark
 JSON with `crop_box` fields is also required (re-run `preprocess_landmarks.py`;
 frames without a crop box are counted and skipped, not silently wrong).
+
+---
+
+## Evaluating semantic explanations (recommended protocol)
+
+Treat explanation quality as **four independent layers** — do not collapse them
+into a single “faithfulness %”:
+
+| Layer | What it measures | Tool / metric |
+|---|---|---|
+| 1. Textual faithfulness | NL sentence ↔ ConceptVector | `verify_faithfulness()` — sanity check only |
+| 2. Localisation correctness | Claimed zone ↔ FF++ mask GT | `evaluate_zone_localization.py` — precision, pointing game |
+| 3. Causal sensitivity | Zone occlusion ↔ ΔP(fake) | `filter_explanations_by_causal_correctness`, deletion/insertion curves |
+| 4. Artifact / utility | Observable artifact labels, human trust | `scripts/evaluate_artifact_module.py` + expert annotation (future) |
+
+Layer 2 is now the headline result for the semantic explanation head (97.7 %
+precision, 99.7 % pointing game). Layers 3–4 remain partially complete — see
+Limitations.
+
+---
+
+## Artifact evidence module
+
+`artifact_analysis/` extends the ontology-based Dirichlet artifact head with
+**measurable image evidence** — interpretable features (LBP entropy, boundary
+gradients, ΔE colour mismatch, FFT band energies, etc.) fused via a Bayesian
+inferencer with abstention when evidence is weak.
+
+- **Does not replace** A(z)/S(z)/R(z)/Q(z) zone flagging — runs only on zones
+  already claimed by the precision-first gate.
+- **Default ON** in `SAEDFPipeline(enable_artifact_evidence=True)`; replaces NL
+  sentences with evidence-backed text when features support a call.
+- Config: `configs/artifact_evidence_config.json` (weak Dirichlet priors — recalibrate
+  before reporting artifact-level metrics).
+- Full design doc: `artifact_analysis/README.md`.
+
+```bash
+# Synthetic demo (blending seam around mouth zone)
+python scripts/demo_artifact_evidence.py --out results/demo_artifact_overlay.png
+
+# Offline evaluation (requires annotated CSV — does not invent labels)
+python scripts/evaluate_artifact_module.py --csv annotations.csv --fit-calibration --out-dir results
+```
+
+Tests: `python -m pytest artifact_analysis/tests/ -v`
 
 ---
 
@@ -551,24 +676,33 @@ correct (see Limitations).
 
 ## Limitations (reported honestly)
 
-- **Faithfulness ≠ forensic correctness — now measurable.**
+- **Faithfulness ≠ forensic correctness — now partially measured.**
   `verify_faithfulness()` checks that a generated NL sentence's
   zone/artifact/severity claims match the `ConceptVector` that produced it.
   It does **not** verify the ConceptVector corresponds to a real artefact.
-  `evaluate_zone_localization.py` now closes most of this gap with
-  mask-based zone ground truth and deletion/insertion causal metrics; run it
-  on the full FF++ test split (with masks downloaded) and report those
-  numbers alongside the faithfulness pass rate. A human/forensic-expert
-  study remains future work for the perceptual-quality dimension.
+  `evaluate_zone_localization.py` closes the **where** gap with mask-based
+  zone ground truth (97.7 % precision, 99.7 % pointing game on 26,938 FF++
+  frames). **What** artifact is present still requires human annotation
+  (`scripts/evaluate_artifact_module.py`) or the new measurable-evidence
+  module (rule-based until calibrated). A forensic-expert utility study
+  remains future work.
+- **Precision-first policy ⇒ low mask recall.** High zone precision is an
+  explicit design choice; the system does not attempt to recover every
+  manipulated pixel region.
+- **Causal policy differs by entry point.** Batch `SAEDFPipeline` hard-filters
+  claims that fail the ΔP(fake) gate by default; the live demo
+  (`inference_server.py`) keeps threshold-clearing claims and shows causal
+  occlusion as an optional badge (`SAEDF_CAUSAL_HARD_FILTER=1` restores hard
+  filtering). Report both modes when comparing numbers.
 - **Off-the-shelf detector provenance.** Public checkpoints have unknown
   training data, so their in-domain FF++ numbers cannot rule out train/test
   leakage. Use `make_ffpp_splits.py` + `train_vit_detector.py` (documented
   provenance, video/identity-level splits) for defensible in-domain claims.
-- **The historical 172-frame FF++ test set is small and Deepfakes-only.**
-  Video-level metrics and cluster-bootstrap CIs in `evaluate_pipeline.py`
-  quantify the effective sample size honestly; re-preprocessing all four
-  method directories and using the official 140-video test split is the
-  recommended protocol going forward.
+- **FF++ classifier performance drops on the full four-method test split**
+  (48.1 % accuracy / 0.676 AUC on 1000 official test frames vs 99.4 % /
+  1.000 on the historical Deepfakes-only 172-frame subset). Cross-dataset
+  Celeb-DF numbers (79.1 % / 0.901) remain the more trustworthy generalisation
+  signal for the off-the-shelf checkpoint.
 - **Cross-dataset calibration is imperfect** (see Evaluation results above);
   `fake_probability` should not be read as a literal well-calibrated
   probability outside the FF++ distribution it was calibrated on.
@@ -583,6 +717,9 @@ correct (see Limitations).
   reported artifact-type probabilities should be read as descriptive of the
   calibration distribution's structure, not as an independently validated
   claim about which artefact is present.
+- **Artifact evidence priors** in `artifact_evidence_config.json` are initial
+  weak priors; phrase outputs as “most likely observable artifact”, never
+  “confirmed manipulation”.
 
 ---
 
@@ -596,11 +733,17 @@ tests/
   test_credible_intervals.py            — Option 4 CI bounds/clipping, β posterior recovery
   test_zone_prior.py                    — Q(z) bounds/monotonicity, method inference, Unknown/Novel, learned signatures/classifier
   test_nl_verifier.py                   — NL template + faithfulness verifier, valid/invalid cases
+  test_causal_correctness.py            — causal occlusion drop, hard_filter vs badge-only modes
   test_selectivity_and_pipeline.py      — zone-threshold selectivity, full predict_label_and_explanation()
   test_fusion_config.py                 — configs/fusion_config.json load/parse
   test_api_schemas.py                   — inference_server.py response-shaping helpers
   test_inference_server_integration.py  — live /health, /infer/image, /infer/video, rate limit, API key
   test_console_utf8.py                  — Windows console-encoding safety helper
+
+artifact_analysis/tests/
+  test_feature_extractor.py             — interpretable zone feature groups
+  test_artifact_inference.py            — Bayesian inferencer, abstention, NL + extended faithfulness
+  test_calibration.py                   — optional Gaussian-NB / Dirichlet calibration model
 
 webapp/src/app/api/detect/route.test.ts — Next.js API proxy route (mode selection, error forwarding)
 ```
@@ -644,8 +787,17 @@ reliably have; run it locally before releases.
   `Retry-After`.
 - **Optional API-key auth** — set `SAEDF_API_KEY`; when set, `/infer/*`
   requires a matching `X-API-Key` header (disabled by default for local dev).
+- **Causal occlusion policy** — `SAEDF_CAUSAL_CORRECTNESS=0` disables
+  occlusion measurement; `SAEDF_CAUSAL_MIN_DROP` sets the drop threshold
+  (default 0.03); `SAEDF_CAUSAL_HARD_FILTER=1` restores hard deletion of
+  claims that fail the causal gate (live demo default: badge only).
 - **Production WSGI server** — `python inference_server.py --production`
   serves via `waitress` instead of the Flask development server.
+
+The Next.js demo (`webapp/`) proxies to this server and surfaces the full
+forensic deep-dive: classification theory, 9-zone scores, semantic explanation
+cards with optional causal badges, FF++ mask-GT research metrics (offline JSON),
+and client-side PDF report export.
 
 ---
 
@@ -821,19 +973,31 @@ python run_pipeline_single_frame.py \
 python evaluate_pipeline.py --json outputs/ffpp_landmarks_test_full.json --output outputs/evaluation_results_ffpp.json
 python ablation_study.py --json outputs/ffpp_landmarks_test_full.json --output outputs/ablation_results_ffpp.json
 python plot_evaluation.py --results outputs/evaluation_results_ffpp.json outputs/evaluation_results_celebdf.json \
-    --labels "FF++ (in-domain)" "Celeb-DF (cross-dataset)" --output-dir outputs/plots
+    --labels "FF++ (official test)" "Celeb-DF (cross-dataset)" --output-dir outputs/plots
+
+# Sync canonical numbers + mask-GT metrics into the webapp
+python sync_webapp_data.py
 ```
 
 ### 5b. Validate explanations against ground truth + method inference
 
 ```bash
-python evaluate_zone_localization.py --json outputs/ffpp_landmarks_test.json \
+python evaluate_zone_localization.py --json outputs/ffpp_landmarks_test_full.json \
     --ffpp-root "datasets/FaceForensics++/FaceForensics++_C23" \
     --masks-root "datasets/FaceForensics++/masks" \
     --output outputs/zone_localization_ffpp.json
 
-python evaluate_method_inference.py --json outputs/ffpp_landmarks_test.json \
+python evaluate_method_inference.py --json outputs/ffpp_landmarks_test_full.json \
     --output outputs/method_inference_ffpp.json
+
+python sync_webapp_data.py   # publishes zone-localization.json to webapp/
+```
+
+### 5c. Artifact evidence (optional)
+
+```bash
+python scripts/demo_artifact_evidence.py
+python scripts/evaluate_artifact_module.py --csv path/to/annotations.csv --out-dir results
 ```
 
 ### 6. Run the real-time inference server (used by webapp/)

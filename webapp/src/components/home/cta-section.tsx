@@ -33,7 +33,7 @@ export function CtaSection() {
                 </Link>
               </Button>
               <Button asChild variant="outline" size="lg">
-                <a href="https://github.com" target="_blank" rel="noreferrer">
+                <a href="https://github.com/ChamodaHerath" target="_blank" rel="noreferrer">
                   <GithubIcon className="h-4 w-4" /> View on GitHub
                 </a>
               </Button>

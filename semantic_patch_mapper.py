@@ -198,6 +198,10 @@ class ExplanationOutput:
     causal_correctness_passed: Optional[List[bool]] = field(default=None, repr=False)
     causal_drop_by_zone: Optional[Dict[str, float]] = field(default=None, repr=False)
     causal_min_drop: Optional[float] = field(default=None, repr=False)
+    # Measurable artifact evidence (ArtifactEvidenceAnalyzer) — None until enrichment
+    artifact_evidence: Optional[List[Dict]] = field(default=None, repr=False)
+    artifact_explanations: Optional[List[str]] = field(default=None, repr=False)
+    artifact_faithfulness: Optional[List[bool]] = field(default=None, repr=False)
 
     def to_dict(self) -> Dict:
         d: Dict = {
@@ -219,6 +223,10 @@ class ExplanationOutput:
             d["causal_correctness_passed"] = self.causal_correctness_passed
             d["causal_drop_by_zone"] = self.causal_drop_by_zone
             d["causal_min_drop"] = self.causal_min_drop
+        if self.artifact_evidence is not None:
+            d["artifact_evidence"] = self.artifact_evidence
+            d["artifact_explanations"] = self.artifact_explanations
+            d["artifact_faithfulness"] = self.artifact_faithfulness
         return d
 
 
@@ -970,30 +978,17 @@ def filter_explanations_by_causal_correctness(
     landmarks_68: Sequence[Sequence[float]],
     fake_prob_fn,
     min_drop: float = DEFAULT_CAUSAL_MIN_DROP,
+    hard_filter: bool = True,
 ) -> ExplanationOutput:
     """
-    Keep only NL claims whose zones causally drive the fake score.
+    Measure causal occlusion drops for each claimed zone.
 
-    After the textual faithfulness verifier, each remaining flagged zone is
-    occluded and the classifier is re-run. A claim is retained only when
-    P(fake) drops by at least ``min_drop``. Claims that fail are removed from
-    ``concept_vectors`` / ``nl_explanations`` so they never enter the final
-    forensic report.
+    When ``hard_filter`` is True (legacy research mode), keep only NL claims
+    whose occlusion drop is ≥ ``min_drop``.
 
-    This is causal sensitivity (does this zone affect the detector?), not
-    pixel-mask ground truth. Mask GT remains an offline evaluation path.
-
-    Args:
-        explanation  : output of predict_label_and_explanation / explainer.predict
-        image_bgr    : (224, 224, 3) face crop used for the claim
-        landmarks_68 : landmarks in the same 224 space
-        fake_prob_fn : callable(List[np.ndarray]) -> List[float]
-        min_drop     : minimum baseline−occluded drop to keep a claim
-
-    Returns:
-        A new ExplanationOutput with only causally-supported claims retained.
-        Classification label is left unchanged (detector verdict is independent
-        of which explanation sentences survive).
+    When ``hard_filter`` is False (live demo policy), keep every
+    threshold-clearing claim and only annotate ``causal_correctness_passed`` /
+    ``causal_drop_by_zone`` so the UI can show an optional causal badge.
     """
     from zone_localization import measure_zone_causal_drops, zone_passes_causal_check
 
@@ -1021,23 +1016,28 @@ def filter_explanations_by_causal_correctness(
         zones=zones,
     )
 
-    kept_cvs: List[ConceptVector] = []
-    kept_sentences: List[str] = []
-    kept_faithful: List[bool] = []
-    kept_causal: List[bool] = []
     drop_by_zone: Dict[str, float] = {
         z: float(info["drop"]) for z, info in drops.items()
     }
 
+    kept_cvs: List[ConceptVector] = []
+    kept_sentences: List[str] = []
+    kept_faithful: List[bool] = []
+    kept_causal: List[bool] = []
+
     for i, cv in enumerate(explanation.concept_vectors):
         drop = drop_by_zone.get(cv.zone, 0.0)
         ok = zone_passes_causal_check(drop, min_drop=min_drop)
-        if not ok:
+        if hard_filter and not ok:
             continue
         kept_cvs.append(cv)
         kept_sentences.append(explanation.nl_explanations[i])
-        kept_faithful.append(explanation.faithfulness_passed[i])
-        kept_causal.append(True)
+        kept_faithful.append(
+            explanation.faithfulness_passed[i]
+            if i < len(explanation.faithfulness_passed)
+            else True
+        )
+        kept_causal.append(bool(ok))
 
     return ExplanationOutput(
         label=explanation.label,

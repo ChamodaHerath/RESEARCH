@@ -81,7 +81,7 @@ export function UploadPanel({
   });
 
   return (
-    <GlassCard className="flex h-full flex-col gap-6 p-6">
+    <GlassCard className="flex h-full flex-col gap-4 p-5">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-white">Input Media</h3>
         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-slate-400">
@@ -93,7 +93,7 @@ export function UploadPanel({
         <div
           {...getRootProps()}
           className={cn(
-            "group relative flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-white/15 bg-white/[0.02] p-8 text-center transition-all duration-300",
+            "group relative flex min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/15 bg-white/[0.02] p-5 text-center transition-all duration-300",
             isDragActive && "border-primary/70 bg-primary/5",
             status === "running" && "pointer-events-none opacity-50"
           )}
@@ -133,14 +133,14 @@ export function UploadPanel({
             <video
               src={previewUrl}
               controls
-              className="h-full max-h-[280px] w-full object-contain"
+              className="h-full max-h-[200px] w-full object-contain"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={previewUrl}
               alt="Uploaded preview"
-              className="h-full max-h-[280px] w-full object-contain"
+              className="h-full max-h-[200px] w-full object-contain"
             />
           )}
           <div className="flex items-center gap-2 border-t border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-slate-400">

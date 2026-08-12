@@ -36,9 +36,9 @@
     "rules": [
       "No zone flags when classifier label is Real",
       "No zone flags when P(fake) < min_fake_probability_for_explanations",
-      "Flag only when Q(z) > per-zone calibrated threshold (strict, real q85)",
-      "Live demos: retain claim only if causal occlusion drops P(fake)",
-      "Fusion R(z) uses \u03b2 posterior mean so attention and gradient both contribute"
+      "Emit NL when Q(z) > per-zone calibrated threshold (strict, real q85)",
+      "Live demos: causal occlusion is an optional badge, not a hard delete of claims",
+      "Fusion R(z) uses β posterior mean so attention and gradient both contribute"
     ],
     "claim_scope": "Flagged zones are high-precision localisation of model anomaly mass. On FF++ masks, flagged-zone precision and pointing-game accuracy are the primary localisation claims \u2014 not that every manipulated pixel is recovered (recall is intentionally low).",
     "calibration_real_pass_rate_mean": 0.15,

@@ -20,7 +20,7 @@ cd "c:\PROJECTS\RESEARCH - Copy"
 
 
 
-# Step 1a — RECOMMENDED: preprocess the official TEST split only (~700 videos)
+# Step 1a —preprocess the official TEST split only (~700 videos)
 
 #   560 fake (4 methods × 140) + 140 originals → ~5k–15k frames at sample-every 10
 

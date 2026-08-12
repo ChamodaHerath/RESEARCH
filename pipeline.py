@@ -109,11 +109,18 @@ class SAEDFPipeline:
         device: Optional[str] = None,
         causal_correctness: bool = True,
         causal_min_drop: Optional[float] = None,
+        enable_artifact_evidence: bool = True,
     ) -> None:
         self.model_name   = model_name
         self.config_path  = config_path
         self.min_severity = min_severity
         self.causal_correctness = causal_correctness
+        self.enable_artifact_evidence = bool(enable_artifact_evidence)
+        self._artifact_analyzer = None
+        if self.enable_artifact_evidence:
+            from artifact_analysis import ArtifactEvidenceAnalyzer
+
+            self._artifact_analyzer = ArtifactEvidenceAnalyzer()
 
         # Load the deepfake detection model
         self.extractor = AttentionExtractor(
@@ -214,6 +221,20 @@ class SAEDFPipeline:
                 min_drop=self.causal_min_drop,
             )
 
+        # Measurable artifact evidence (post-Q flagging; does not recompute R/Q)
+        if self.enable_artifact_evidence and explanation.concept_vectors:
+            from artifact_analysis.pipeline_integration import (
+                enrich_explanation_with_artifact_evidence,
+            )
+
+            explanation, _ = enrich_explanation_with_artifact_evidence(
+                explanation=explanation,
+                image_bgr=image_bgr,
+                landmarks_68=landmarks_68,
+                analyzer=self._artifact_analyzer,
+                replace_nl=True,
+            )
+
         # ------------------------------------------------------------------ #
         # Wrap in ForensicReport                                               #
         # ------------------------------------------------------------------ #
@@ -222,6 +243,7 @@ class SAEDFPipeline:
             "timestamp":   datetime.now(tz=timezone.utc).isoformat(),
             "model":       self.model_name,
             "calibration": self._calibration_meta,
+            "artifact_evidence_enabled": self.enable_artifact_evidence,
         }
         return ForensicReport(
             classification=classification,

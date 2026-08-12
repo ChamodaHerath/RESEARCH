@@ -46,9 +46,10 @@ export function SemanticExplanationsCard({
           Semantic Explanations
         </h3>
         <p className="text-sm leading-relaxed text-slate-400">
-          No zone crossed the calibrated flagging threshold (or survived the causal gate),
-          so no natural-language claims were emitted. All 9 region corruption scores are
-          still shown below — higher score means that region is more likely manipulated.
+          No zone crossed the calibrated Q(z) threshold under a confident Fake
+          verdict, so no natural-language claims were emitted. All 9 region
+          scores are still shown — higher score means that region is more likely
+          manipulated.
         </p>
       </GlassCard>
     );

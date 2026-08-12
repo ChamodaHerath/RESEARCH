@@ -116,10 +116,8 @@ def main() -> None:
         }
         for mode in MODES
     }
-    # "classifier_only" isn't run through predict_label_and_explanation at
-    # all -- it has no zone attribution step, which is exactly the point of
-    # including it: it establishes what the classifier alone can and can't
-    # tell a forensic analyst, as a baseline for every other row.
+    
+
     classifier_y_true: List[int] = []
     classifier_y_prob: List[float] = []
 
@@ -164,7 +162,7 @@ def main() -> None:
 
     results: Dict = {"metadata": {"json": str(args.json), "config": str(args.config), "model": args.model_name}, "modes": {}}
 
-    # classifier_only baseline: the raw detector, no explanation layer at all.
+    
     classifier_only: Dict = {
         "faithfulness_pass_rate": None,
         "mean_flagged_zones_per_fake_frame": None,

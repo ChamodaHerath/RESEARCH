@@ -80,7 +80,7 @@ export function Navbar() {
 
         <div className="hidden items-center gap-3 lg:flex">
           <a
-            href="https://github.com"
+            href="https://github.com/ChamodaHerath"
             target="_blank"
             rel="noreferrer"
             className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-300 transition-colors hover:border-primary/50 hover:text-white"
@@ -126,7 +126,7 @@ export function Navbar() {
               ))}
               <div className="mt-2 flex items-center gap-3 px-4">
                 <a
-                  href="https://github.com"
+                  href="https://github.com/ChamodaHerath"
                   target="_blank"
                   rel="noreferrer"
                   className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-slate-300"

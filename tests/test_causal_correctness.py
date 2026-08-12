@@ -104,6 +104,29 @@ def test_filter_keeps_only_causally_supported_claims(sample_landmarks_68):
     assert filtered.fake_probability == 0.9
 
 
+def test_soft_filter_keeps_threshold_claims_and_annotates_causal(sample_landmarks_68):
+    """Live demo policy: hard_filter=False keeps all claims; causal is a badge."""
+    img = np.full((224, 224, 3), 128, dtype=np.uint8)
+    explanation = _make_explanation(["mouth", "forehead"])
+
+    def fake_prob_fn(images):
+        return [0.90, 0.40, 0.89]
+
+    annotated = filter_explanations_by_causal_correctness(
+        explanation=explanation,
+        image_bgr=img,
+        landmarks_68=sample_landmarks_68,
+        fake_prob_fn=fake_prob_fn,
+        min_drop=0.02,
+        hard_filter=False,
+    )
+    assert [cv.zone for cv in annotated.concept_vectors] == ["mouth", "forehead"]
+    assert len(annotated.nl_explanations) == 2
+    assert annotated.causal_correctness_passed == [True, False]
+    assert annotated.causal_drop_by_zone["mouth"] >= 0.02
+    assert annotated.causal_drop_by_zone["forehead"] < 0.02
+
+
 def test_filter_drops_all_when_no_zone_passes_causal(sample_landmarks_68):
     """Causal gate is strict: no Fake soft-keep of below-evidence zones."""
     img = np.full((224, 224, 3), 128, dtype=np.uint8)

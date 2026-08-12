@@ -48,7 +48,7 @@ export function FacialRegionsCard({ regions }: { regions: FacialRegionScore[] })
         </h3>
         <p className="text-xs leading-relaxed text-slate-400">
           Every zone is scored. Higher score ⇒ more likely corrupted / manipulated.
-          Flagged zones crossed the calibrated explanation threshold.
+          “Claimed” zones cleared the calibrated threshold and have a semantic explanation.
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export function FacialRegionsCard({ regions }: { regions: FacialRegionScore[] })
                     <span className="truncate text-sm text-slate-200">{r.label}</span>
                     {r.flagged && (
                       <span className="shrink-0 rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-300">
-                        Flagged
+                        Claimed
                       </span>
                     )}
                   </div>

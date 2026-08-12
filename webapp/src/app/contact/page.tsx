@@ -48,7 +48,7 @@ export default function ContactPage() {
           <GlassCard className="flex flex-col gap-4 p-6">
             <h3 className="font-display text-base font-semibold text-white">Direct Contact</h3>
             <a
-              href="mailto:research@explaindeep.ai"
+              href="mailto:herathhmcd.21@uom.lk"
               className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-200 transition-colors hover:border-primary/40 hover:bg-white/[0.06]"
             >
               <Mail className="h-4 w-4 text-primary" /> herathhmcd.21@uom.lk

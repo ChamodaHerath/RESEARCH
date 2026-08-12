@@ -86,10 +86,12 @@ FFPP_ROOT = Path(
 )
 # Minimum P(fake) drop when a claimed zone is occluded for the claim to survive
 # Causal correctness gate — research-grade default ON.
-# Only claims that move P(fake) by ≥ CAUSAL_MIN_DROP enter the final report.
-# Override with SAEDF_CAUSAL_MIN_DROP / SAEDF_CAUSAL_CORRECTNESS=0.
+# Causal occlusion is measured for badges / validation, but by default does NOT
+# delete threshold-clearing NL claims (live demo policy). Set
+# SAEDF_CAUSAL_HARD_FILTER=1 to restore the old hard gate.
 CAUSAL_MIN_DROP = float(os.environ.get("SAEDF_CAUSAL_MIN_DROP", "0.03"))
 CAUSAL_CORRECTNESS_ENABLED = os.environ.get("SAEDF_CAUSAL_CORRECTNESS", "1") != "0"
+CAUSAL_HARD_FILTER = os.environ.get("SAEDF_CAUSAL_HARD_FILTER", "0") == "1"
 
 # 9-zone -> 5 display-region aggregation used by the frontend's facial-region UI.
 DISPLAY_REGION_MAP: Dict[str, List[str]] = {
@@ -234,8 +236,10 @@ def run_single_frame(image_bgr_native: np.ndarray, bundle: ModelBundle) -> Dict:
         fake_probability=inputs["fake_probability"],
     )
 
-    # Causal correctness gate — only claims that move P(fake) enter the report.
-    # Prefer the calibrated causal_min_drop from fusion_config when present.
+    # Causal occlusion: annotate ΔP(fake) per claimed zone. Hard filtering is
+    # off by default so NL is emitted whenever Q(z) clears the calibrated
+    # threshold (Fake + confident P(fake)). Enable SAEDF_CAUSAL_HARD_FILTER=1
+    # for the old research-precision gate.
     if CAUSAL_CORRECTNESS_ENABLED and explanation.concept_vectors:
         min_drop = float(
             getattr(bundle.explainer, "causal_min_drop", None) or CAUSAL_MIN_DROP
@@ -248,6 +252,7 @@ def run_single_frame(image_bgr_native: np.ndarray, bundle: ModelBundle) -> Dict:
                 bundle.extractor, imgs
             ),
             min_drop=min_drop,
+            hard_filter=CAUSAL_HARD_FILTER,
         )
 
     return {
@@ -727,15 +732,13 @@ def build_facial_regions(explanation: ExplanationOutput, bundle: ModelBundle) ->
     Always return all 9 SAEDF zones with anomaly scores.
 
     High score ⇒ region is more likely corrupted / manipulated.
-    ``flagged`` marks zones that crossed the calibrated explanation threshold
-    (and survived the causal gate when enabled).
+    ``flagged`` marks zones that cleared the calibrated threshold and received
+    an NL claim (causal is optional annotation, not required for the claim).
     """
     zone_thresholds = getattr(bundle.explainer, "zone_thresholds", None) or {}
     min_severity = getattr(bundle.explainer, "min_severity", "medium")
     flagged_by_cv = {cv.zone: cv for cv in explanation.concept_vectors}
-    # Research-grade: Flagged Yes only for zones that entered the explanation
-    # set (Fake + confident P(fake) + score > thr, then causal survivors).
-    # Never invent flags from score alone on Real / weak-Fake frames.
+    # Claimed / flagged = Fake + confident P(fake) + score > thr (concept vector).
     min_p = float(
         getattr(bundle.explainer, "min_fake_probability_for_explanations", 0.70)
     )
@@ -752,14 +755,14 @@ def build_facial_regions(explanation: ExplanationOutput, bundle: ModelBundle) ->
             if explanation.Q_scores is not None
             else None
         )
-        # Display / corruption score: Q(z) when available (what drives flagging), else R(z)
+        # Display / corruption score: Q(z) when available (what drives claims), else R(z)
         score = Q if Q is not None else R
         threshold = float(
             zone_thresholds.get(zone, SEVERITY_THRESHOLDS.get(min_severity, 0.50))
         )
         clears_thr = allow_flags and round(score, 4) > round(threshold, 4)
         cv = flagged_by_cv.get(zone)
-        # Authoritative flag = survived the explanation pipeline (incl. causal).
+        # Authoritative claim = concept vector present (threshold-clearing NL).
         is_flagged = cv is not None
         regions.append({
             "region": zone,
@@ -790,7 +793,7 @@ def build_confidence_breakdown(explanation: ExplanationOutput, bundle: ModelBund
     items = [
         {"metric": "Mean Fused Zone Anomaly  R̄(z)", "value": round(r_mean)},
         {"metric": "Calibrated Fusion Weight β (attention share)", "value": round(beta * 100)},
-        {"metric": "Flagged Zone Coverage", "value": round(coverage)},
+        {"metric": "Claimed Zone Coverage", "value": round(coverage)},
     ]
     if explanation.method_probabilities:
         top_method = max(explanation.method_probabilities, key=explanation.method_probabilities.get)
@@ -804,14 +807,12 @@ def build_confidence_breakdown(explanation: ExplanationOutput, bundle: ModelBund
         if explanation.faithfulness_passed else 100.0
     )
     items.append({"metric": "Explanation Faithfulness Pass Rate", "value": round(faithful_rate)})
-    if explanation.causal_correctness_passed is not None:
-        # Surviving claims already passed the gate; report retention vs all tested drops.
-        n_tested = len(explanation.causal_drop_by_zone or {})
-        n_kept = len(explanation.concept_vectors)
-        retention = (100.0 * n_kept / n_tested) if n_tested else 100.0
+    if explanation.causal_correctness_passed is not None and explanation.causal_drop_by_zone:
+        n_tested = len(explanation.causal_drop_by_zone)
+        n_causal_ok = sum(1 for p in explanation.causal_correctness_passed if p)
         items.append({
-            "metric": "Causal Correctness Retention",
-            "value": round(retention),
+            "metric": "Causal-verified Claims (optional badge)",
+            "value": round(100.0 * n_causal_ok / n_tested) if n_tested else 0,
         })
     return items
 
@@ -822,7 +823,7 @@ def build_explanation_validation(explanation: ExplanationOutput) -> Dict:
 
     Live checks (this request):
       - textual faithfulness (sentence ↔ ConceptVector)
-      - causal occlusion drop (zone must move P(fake))
+      - causal occlusion drop (optional badge; NL uses threshold gate)
 
     Offline research validation (FF++ mask GT, thesis numbers):
       - loaded from webapp/src/data/zone-localization.json when present
@@ -837,12 +838,23 @@ def build_explanation_validation(explanation: ExplanationOutput) -> Dict:
 
     causal_enabled = explanation.causal_correctness_passed is not None
     n_tested = len(explanation.causal_drop_by_zone or {}) if causal_enabled else 0
-    n_kept = len(explanation.concept_vectors) if causal_enabled else n_claims
-    causal_retention = (n_kept / n_tested) if n_tested else (1.0 if causal_enabled else None)
+    n_causal_ok = (
+        int(sum(1 for p in explanation.causal_correctness_passed if p))
+        if explanation.causal_correctness_passed
+        else 0
+    )
+    causal_retention = (
+        (n_causal_ok / n_tested) if n_tested else (None if not causal_enabled else 1.0)
+    )
 
     per_claim: List[Dict] = []
     for i, cv in enumerate(explanation.concept_vectors):
         drop = (explanation.causal_drop_by_zone or {}).get(cv.zone)
+        causal_ok = None
+        if explanation.causal_correctness_passed is not None and i < len(
+            explanation.causal_correctness_passed
+        ):
+            causal_ok = bool(explanation.causal_correctness_passed[i])
         per_claim.append({
             "zone": cv.zone,
             "artifact_type": cv.artifact_type,
@@ -851,7 +863,7 @@ def build_explanation_validation(explanation: ExplanationOutput) -> Dict:
                 if i < len(explanation.faithfulness_passed) else True
             ),
             "causal_drop": round(float(drop), 4) if drop is not None else None,
-            "causal_passed": True if causal_enabled else None,
+            "causal_passed": causal_ok,
         })
 
     mask_gt: Optional[Dict] = None
@@ -903,24 +915,24 @@ def build_explanation_validation(explanation: ExplanationOutput) -> Dict:
             "causal_gate_enabled": causal_enabled,
             "causal_min_drop": explanation.causal_min_drop,
             "causal_zones_tested": n_tested,
-            "causal_claims_retained": n_kept,
+            "causal_claims_retained": n_causal_ok if causal_enabled else n_claims,
             "causal_retention_rate": (
                 round(causal_retention, 4) if causal_retention is not None else None
             ),
             "per_claim": per_claim,
             "note": (
-                "Live checks verify (1) every NL claim matches its ConceptVector and "
-                "(2) each retained zone causally moves P(fake) when occluded. "
-                "They do not prove pixel-level manipulation without a mask."
+                "NL claims are emitted when Fake + P(fake) clears the explanation gate "
+                "and Q(z) exceeds the per-zone calibrated real-face threshold. "
+                "Causal occlusion ΔP(fake) is an optional badge, not a hard delete of "
+                "threshold-clearing claims. This does not prove pixel-level manipulation "
+                "without a mask."
             ),
         },
         "mask_ground_truth_validation": mask_gt,
         "novel_contribution_note": (
-            "The semantic explanation head is validated independently of the "
-            "classifier verdict: on FF++ mask ground truth, flagged zones are "
-            "high-precision and the top-scored zone hits a truly manipulated "
-            "region in the pointing game on nearly all frames — even when "
-            "classification is imperfect."
+            "Contribution: dual-head SAEDF with Bayesian zone fusion + calibrated "
+            "threshold claims, optional causal occlusion badges, and offline FF++ "
+            "mask-GT localisation evaluation."
         ),
     }
 

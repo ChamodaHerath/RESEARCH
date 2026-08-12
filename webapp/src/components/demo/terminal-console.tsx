@@ -103,7 +103,7 @@ export function TerminalConsole({
       <div
         ref={scrollRef}
         className="terminal-font flex-1 overflow-y-auto px-4 py-4 text-[12.5px] leading-relaxed text-emerald-400 sm:text-[13px]"
-        style={{ minHeight: 320, maxHeight: 520 }}
+        style={{ minHeight: 240, maxHeight: 420 }}
       >
         {entries.length === 0 && !typingText && (
           <p className="text-slate-600">

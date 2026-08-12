@@ -1,4 +1,4 @@
-# ExplainDeep — Explainable Deepfake Detection using Vision Transformers
+# ExplainDeep — Extended Explainable Vision Transformer Framework For Deepfake Detection
 
 A premium, dark-themed digital forensics web platform demonstrating an explainable
 deepfake detection system powered by Vision Transformers. Built for a final year

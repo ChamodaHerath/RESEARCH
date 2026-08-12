@@ -8,7 +8,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Fingerprint,
-  CheckCircle2,
 } from "lucide-react";
 import { GlassCard, SectionBadge } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
@@ -26,10 +25,8 @@ function faithfulnessPct(result: DetectionResponse): string {
 }
 
 function whyZeroZones(result: DetectionResponse): string {
-  const live = result.explanation_validation?.live;
   const isFake = result.prediction === "Fake";
   const confPct = result.confidence;
-  // Displayed confidence is P(fake) when Fake, P(real) when Real.
   const pFakePct = isFake ? confPct : Math.max(0, 100 - confPct);
 
   const elevated = [...result.facial_regions]
@@ -57,11 +54,6 @@ function whyZeroZones(result: DetectionResponse): string {
           .join("; ")
       : null;
 
-  const caveat =
-    ` Fake confidence is ${pFakePct.toFixed(1)}%. ` +
-    `Because the research policy withholds natural-language claims under these conditions, ` +
-    `we cannot fully claim those zones are corrupted.`;
-
   if (!isFake) {
     return (
       `No semantic sentences were emitted (verdict is Real).` +
@@ -78,20 +70,7 @@ function whyZeroZones(result: DetectionResponse): string {
       (zoneList
         ? ` Candidate / elevated zones: ${zoneList}.`
         : ` No zone clearly exceeded its calibrated threshold.`) +
-      caveat
-    );
-  }
-
-  if (
-    live?.causal_gate_enabled &&
-    (live.causal_zones_tested ?? 0) > 0 &&
-    live.causal_claims_retained === 0
-  ) {
-    return (
-      `No semantic sentences were retained: candidate zones were dropped by the causal gate ` +
-      `(occlusion did not reduce P(fake) by ≥ ${live.causal_min_drop ?? 0.03}).` +
-      (zoneList ? ` Zones considered: ${zoneList}.` : "") +
-      caveat
+      ` Fake confidence is ${pFakePct.toFixed(1)}% (needs > 70% for NL claims).`
     );
   }
 
@@ -100,7 +79,7 @@ function whyZeroZones(result: DetectionResponse): string {
     (zoneList
       ? ` Elevated region scores: ${zoneList}.`
       : ` No region crossed the calibrated Q(z) threshold.`) +
-    caveat
+    ` Fake confidence is ${pFakePct.toFixed(1)}%.`
   );
 }
 
@@ -140,7 +119,7 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
                   ExplainDeep Forensic Report
                 </div>
                 <p className="text-xs text-slate-500">
-                  Explainable Deepfake Detection using Vision Transformers
+                  Extended Explainable Vision Transformer Framework For Deepfake Detection
                 </p>
               </div>
               <div
@@ -249,7 +228,7 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
                       </td>
                       <td className="py-1.5 text-slate-600">
                         {r.flagged
-                          ? "Flagged"
+                          ? "Claimed"
                           : r.anomalyScore > 0.65
                             ? "High"
                             : r.anomalyScore > 0.35
@@ -268,13 +247,16 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
                 <ReportGrid
                   rows={[
                     ["Faithfulness score", faithfulnessPct(result)],
-                    ["Zones flagged", String(flaggedCount)],
+                    ["Zones claimed", String(flaggedCount)],
                     [
                       "NL claims",
                       String(result.semantic_explanations.length),
                     ],
                   ]}
                 />
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Faithfulness: share of NL sentences that match their source zone/artifact/confidence numbers.
+                </p>
               </div>
 
               <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -294,10 +276,6 @@ export function ForensicReport({ result }: { result: DetectionResponse }) {
                       <p className="font-semibold text-slate-800">{exp.title}</p>
                       <p className="mt-1 leading-relaxed">{exp.description}</p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Faithfulness PASS
-                        </span>
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                           {(exp.score * 100).toFixed(0)}% match
                         </span>

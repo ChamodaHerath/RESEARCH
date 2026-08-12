@@ -24,7 +24,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ExplainDeep | Explainable Deepfake Detection using Vision Transformers",
+  title: "ExplainDeep | Extended Explainable Vision Transformer Framework For Deepfake Detection",
   description:
     "An AI-powered digital forensic platform that detects manipulated images and video while generating human-readable, semantic forensic explanations using Vision Transformers and attention analysis.",
   keywords: [
