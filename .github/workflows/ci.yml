@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python-tests:
+    name: Python unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Fast unit-test tier deliberately avoids torch/transformers/dlib/mtcnn
+      # (see tests/test_api_schemas.py's importorskip and semantic_patch_mapper.py's
+      # optional `import torch`), so CI only needs these light dependencies to
+      # exercise the zone-mapping, fusion, Bayesian calibration, and NL-verifier
+      # unit tests. Heavier /infer/* integration tests that load the real ViT
+      # model + dlib landmark predictor are marked `integration` and skipped here.
+      - name: Install light dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy scipy opencv-python-headless matplotlib pytest
+
+      - name: Run fast unit tests
+        run: pytest tests/ -v -m "not integration"
+
+  webapp:
+    name: Webapp lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (API route proxy)
+        run: npm run test
+
+      - name: Build
+        run: npm run build

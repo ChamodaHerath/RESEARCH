@@ -1,0 +1,82 @@
+{
+  "model_name": "hamzenium/ViT-Deepfake-Classifier",
+  "beta": 0.9329,
+  "beta_posterior": {
+    "map": 0.9329,
+    "mean": 0.8685,
+    "std": 0.0908,
+    "ci_lower": 0.6597,
+    "ci_upper": 0.994
+  },
+  "severity_thresholds": {
+    "high": 0.75,
+    "medium": 0.5,
+    "low": 0.25
+  },
+  "zone_thresholds": {
+    "left_eye": 0.6417600512504578,
+    "right_eye": 0.6565850973129272,
+    "nose_bridge": 0.47173503041267395,
+    "nose_tip": 0.5228150486946106,
+    "left_cheek": 0.6923150420188904,
+    "right_cheek": 0.6754800081253052,
+    "mouth": 0.7322400808334351,
+    "forehead": 0.5328501462936401,
+    "chin_jaw": 0.6613200306892395
+  },
+  "zone_thresholds_scale": "Q(z)_marginal_posterior",
+  "zone_threshold_quantile": 0.85,
+  "evidence_weight": 10.0,
+  "max_flagged_zones": null,
+  "min_fake_probability_for_explanations": 0.0,
+  "causal_min_drop": 0.03,
+  "beta_for_fusion": "posterior_mean",
+  "research_policy": {
+    "name": "threshold_based_v1",
+    "rules": [
+      "No zone flags when classifier label is Real",
+      "Emit NL when Q(z) > per-zone calibrated threshold (strict, real q85)",
+      "Live demos: causal occlusion is an optional badge, not a hard delete of claims",
+      "Fusion R(z) uses β posterior mean so attention and gradient both contribute"
+    ],
+    "claim_scope": "Flagged zones exceed the real-face calibrated Q(z) threshold for that region. All threshold-clearing zones on Fake verdicts receive a natural-language claim.",
+    "calibration_real_pass_rate_mean": 0.15,
+    "calibration_fake_pass_rate_mean": 0.2743,
+    "per_zone_real_pass_rate": {
+      "left_eye": 0.15,
+      "right_eye": 0.15,
+      "nose_bridge": 0.15,
+      "nose_tip": 0.15,
+      "left_cheek": 0.15,
+      "right_cheek": 0.15,
+      "mouth": 0.15,
+      "forehead": 0.15,
+      "chin_jaw": 0.15
+    },
+    "per_zone_fake_pass_rate": {
+      "left_eye": 0.282,
+      "right_eye": 0.253,
+      "nose_bridge": 0.354,
+      "nose_tip": 0.3445,
+      "left_cheek": 0.219,
+      "right_cheek": 0.221,
+      "mouth": 0.0715,
+      "forehead": 0.391,
+      "chin_jaw": 0.3325
+    }
+  },
+  "zone_names": [
+    "left_eye",
+    "right_eye",
+    "nose_bridge",
+    "nose_tip",
+    "left_cheek",
+    "right_cheek",
+    "mouth",
+    "forehead",
+    "chin_jaw"
+  ],
+  "calibration_n_frames": 2500,
+  "calibration_n_fake": 2000,
+  "calibration_n_real": 500
+}

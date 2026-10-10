@@ -1,0 +1,211 @@
+{
+  "created_utc": "2026-07-06T14:20:10.560269+00:00",
+  "source_json": "outputs\\ffpp_landmarks_val.json",
+  "model_name": "pipeline_default",
+  "zone_names": [
+    "left_eye",
+    "right_eye",
+    "nose_bridge",
+    "nose_tip",
+    "left_cheek",
+    "right_cheek",
+    "mouth",
+    "forehead",
+    "chin_jaw"
+  ],
+  "n_frames_used": {
+    "Deepfakes": 1000,
+    "Face2Face": 1000,
+    "FaceSwap": 1000,
+    "NeuralTextures": 1000
+  },
+  "n_frames_skipped_errors": 0,
+  "cosine_self_accuracy": 0.373,
+  "signatures": {
+    "Deepfakes": {
+      "left_eye": 0.519852,
+      "right_eye": 0.504882,
+      "nose_bridge": 0.50804,
+      "nose_tip": 0.453164,
+      "left_cheek": 0.558264,
+      "right_cheek": 0.467393,
+      "mouth": 0.451957,
+      "forehead": 0.527003,
+      "chin_jaw": 0.497272
+    },
+    "Face2Face": {
+      "left_eye": 0.529144,
+      "right_eye": 0.519899,
+      "nose_bridge": 0.521942,
+      "nose_tip": 0.545729,
+      "left_cheek": 0.526873,
+      "right_cheek": 0.470682,
+      "mouth": 0.489037,
+      "forehead": 0.548441,
+      "chin_jaw": 0.528535
+    },
+    "FaceSwap": {
+      "left_eye": 0.608737,
+      "right_eye": 0.591842,
+      "nose_bridge": 0.631656,
+      "nose_tip": 0.636479,
+      "left_cheek": 0.6003,
+      "right_cheek": 0.502254,
+      "mouth": 0.659892,
+      "forehead": 0.608025,
+      "chin_jaw": 0.661441
+    },
+    "NeuralTextures": {
+      "left_eye": 0.522735,
+      "right_eye": 0.516971,
+      "nose_bridge": 0.511901,
+      "nose_tip": 0.475004,
+      "left_cheek": 0.539657,
+      "right_cheek": 0.493223,
+      "mouth": 0.475817,
+      "forehead": 0.523702,
+      "chin_jaw": 0.515941
+    }
+  },
+  "signature_stds": {
+    "Deepfakes": {
+      "left_eye": 0.178966,
+      "right_eye": 0.155202,
+      "nose_bridge": 0.202731,
+      "nose_tip": 0.183556,
+      "left_cheek": 0.246793,
+      "right_cheek": 0.210593,
+      "mouth": 0.14314,
+      "forehead": 0.202919,
+      "chin_jaw": 0.192815
+    },
+    "Face2Face": {
+      "left_eye": 0.184219,
+      "right_eye": 0.170789,
+      "nose_bridge": 0.211502,
+      "nose_tip": 0.233485,
+      "left_cheek": 0.229758,
+      "right_cheek": 0.206935,
+      "mouth": 0.158969,
+      "forehead": 0.208012,
+      "chin_jaw": 0.210578
+    },
+    "FaceSwap": {
+      "left_eye": 0.214792,
+      "right_eye": 0.199894,
+      "nose_bridge": 0.240863,
+      "nose_tip": 0.23976,
+      "left_cheek": 0.239157,
+      "right_cheek": 0.214536,
+      "mouth": 0.21355,
+      "forehead": 0.205441,
+      "chin_jaw": 0.212505
+    },
+    "NeuralTextures": {
+      "left_eye": 0.18765,
+      "right_eye": 0.17159,
+      "nose_bridge": 0.207413,
+      "nose_tip": 0.190742,
+      "left_cheek": 0.236224,
+      "right_cheek": 0.214332,
+      "mouth": 0.150291,
+      "forehead": 0.202029,
+      "chin_jaw": 0.2093
+    }
+  },
+  "classifier": {
+    "type": "multinomial_logistic_regression",
+    "classes": [
+      "Deepfakes",
+      "Face2Face",
+      "FaceSwap",
+      "NeuralTextures"
+    ],
+    "coef": [
+      [
+        0.11321805115767139,
+        -0.0816611912031881,
+        0.10990528789527816,
+        -0.33699654259290485,
+        0.14729258463241682,
+        0.005283493269509497,
+        -0.37164325388527514,
+        0.0718187433959656,
+        -0.06413962379682926
+      ],
+      [
+        -0.09532316699901953,
+        -0.03665673644442945,
+        -0.16474615119441008,
+        0.37374163135737354,
+        -0.06106567033667965,
+        -0.021953543573914963,
+        -0.11921583620940206,
+        0.10283185151929053,
+        -0.10808640704808303
+      ],
+      [
+        0.009282066909555456,
+        0.037037478481465984,
+        0.047064322619517186,
+        0.15669917726546553,
+        -0.10809867146959314,
+        -0.06529157686930949,
+        0.6415129923412064,
+        -0.11535504365848862,
+        0.14185820782625297
+      ],
+      [
+        -0.027176951068205123,
+        0.08128044916614993,
+        0.007776540679617743,
+        -0.19344426602994447,
+        0.021871757173857954,
+        0.08196162717371469,
+        -0.15065390224652886,
+        -0.05929555125677312,
+        0.030367823018657272
+      ]
+    ],
+    "intercept": [
+      -0.022740465541472816,
+      0.07439026246158412,
+      -0.12313465630063358,
+      0.07148485938057425
+    ],
+    "feature_mean": [
+      0.5451169881522655,
+      0.5333984665572643,
+      0.5433848221227526,
+      0.5275939903706313,
+      0.5562735750377178,
+      0.4833881425373256,
+      0.5191758744120598,
+      0.5517928189560771,
+      0.5507974065355956
+    ],
+    "feature_std": [
+      0.19541992185646057,
+      0.1784222901585709,
+      0.22212605897922175,
+      0.225036680162607,
+      0.23967469639919703,
+      0.21213496150594477,
+      0.18778901816967783,
+      0.20739086711662347,
+      0.2163925261577854
+    ],
+    "zone_names": [
+      "left_eye",
+      "right_eye",
+      "nose_bridge",
+      "nose_tip",
+      "left_cheek",
+      "right_cheek",
+      "mouth",
+      "forehead",
+      "chin_jaw"
+    ],
+    "train_self_accuracy": 0.4103
+  }
+}

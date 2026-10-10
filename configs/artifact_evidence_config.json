@@ -1,0 +1,217 @@
+{
+  "version": "0.1.0",
+  "notes": [
+    "INITIAL WEAK PRIORS — not scientific truth.",
+    "Dirichlet concentrations are intentionally low so measured evidence dominates.",
+    "Calibrate on labeled artifact annotations before reporting artifact-level metrics.",
+    "R(z)/Q(z) adjust confidence/abstention only; they do not select artifact type."
+  ],
+  "artifact_types": [
+    "texture_inconsistency",
+    "blending_boundary",
+    "color_tone_mismatch",
+    "lighting_inconsistency",
+    "geometric_distortion",
+    "frequency_artifact",
+    "compression_artifact",
+    "no_clear_artifact"
+  ],
+  "feature_normalization": {
+    "method": "robust_minmax",
+    "eps": 1e-8,
+    "clip_min": 0.0,
+    "clip_max": 1.0
+  },
+  "min_zone_pixels": 64,
+  "abstention": {
+    "min_probability": 0.35,
+    "min_margin": 0.08,
+    "min_q_score": 0.50,
+    "min_image_laplacian_var": 5.0
+  },
+  "severity_thresholds": {
+    "high": 0.75,
+    "medium": 0.50,
+    "low": 0.25
+  },
+  "g_rq": {
+    "r_weight": 0.4,
+    "q_weight": 0.6,
+    "floor": 0.15,
+    "ceiling": 1.0
+  },
+  "artifact_feature_weights": {
+    "texture_inconsistency": {
+      "lbp_entropy": 0.6,
+      "lbp_entropy_difference": 1.2,
+      "laplacian_variance": 0.7,
+      "laplacian_variance_difference": 1.1,
+      "local_contrast": 0.5,
+      "local_contrast_difference": 1.0,
+      "gradient_magnitude_std": 0.6,
+      "gray_level_entropy": 0.5,
+      "high_low_frequency_ratio_difference": 0.8
+    },
+    "blending_boundary": {
+      "boundary_gradient_mean": 1.3,
+      "boundary_discontinuity": 1.4,
+      "inside_outside_color_difference": 1.0,
+      "edge_density_boundary": 1.1,
+      "canny_edge_density": 0.9,
+      "boundary_sharpness_ratio": 1.0
+    },
+    "color_tone_mismatch": {
+      "delta_e_neighbor": 1.5,
+      "hue_difference": 1.1,
+      "saturation_difference": 1.0,
+      "lab_a_mean_difference": 0.8,
+      "lab_b_mean_difference": 0.8,
+      "rgb_mean_difference": 0.7
+    },
+    "lighting_inconsistency": {
+      "luminance_neighbor_difference": 1.4,
+      "illumination_gradient": 1.0,
+      "highlight_ratio": 0.7,
+      "highlight_ratio_difference": 0.9,
+      "shadow_ratio": 0.7,
+      "left_right_luminance_imbalance": 0.8
+    },
+    "geometric_distortion": {
+      "landmark_symmetry_error": 1.5,
+      "shape_ratio_deviation": 1.2,
+      "contour_irregularity": 1.1,
+      "eye_width_asymmetry": 1.0,
+      "mouth_corner_asymmetry": 1.0,
+      "nose_alignment": 0.9,
+      "jaw_contour_irregularity": 1.0
+    },
+    "frequency_artifact": {
+      "high_low_frequency_ratio": 1.3,
+      "spectral_entropy": 0.8,
+      "spectral_entropy_difference": 1.0,
+      "radial_spectrum_difference": 1.1,
+      "high_frequency_energy": 0.7,
+      "mid_frequency_energy": 0.5
+    },
+    "compression_artifact": {
+      "blocking_score": 1.4,
+      "block_boundary_difference": 1.2,
+      "block_boundary_strength": 1.0,
+      "block_hf_discontinuity": 1.1
+    },
+    "no_clear_artifact": {}
+  },
+  "zone_artifact_priors": {
+    "_comment": "Dirichlet concentration parameters (weak). Evidence should dominate.",
+    "mouth": {
+      "blending_boundary": 3.0,
+      "texture_inconsistency": 2.5,
+      "geometric_distortion": 2.0,
+      "color_tone_mismatch": 1.5,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "lighting_inconsistency": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "left_eye": {
+      "texture_inconsistency": 2.5,
+      "lighting_inconsistency": 2.5,
+      "blending_boundary": 2.0,
+      "color_tone_mismatch": 2.0,
+      "geometric_distortion": 1.5,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "right_eye": {
+      "texture_inconsistency": 2.5,
+      "lighting_inconsistency": 2.5,
+      "blending_boundary": 2.0,
+      "color_tone_mismatch": 2.0,
+      "geometric_distortion": 1.5,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "nose_bridge": {
+      "geometric_distortion": 2.5,
+      "blending_boundary": 2.0,
+      "lighting_inconsistency": 2.0,
+      "texture_inconsistency": 1.5,
+      "color_tone_mismatch": 1.0,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "nose_tip": {
+      "texture_inconsistency": 2.5,
+      "blending_boundary": 2.0,
+      "frequency_artifact": 1.5,
+      "color_tone_mismatch": 1.5,
+      "lighting_inconsistency": 1.0,
+      "geometric_distortion": 1.0,
+      "compression_artifact": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "left_cheek": {
+      "texture_inconsistency": 3.0,
+      "color_tone_mismatch": 2.5,
+      "compression_artifact": 2.0,
+      "lighting_inconsistency": 1.5,
+      "frequency_artifact": 1.5,
+      "blending_boundary": 1.5,
+      "geometric_distortion": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "right_cheek": {
+      "texture_inconsistency": 3.0,
+      "color_tone_mismatch": 2.5,
+      "compression_artifact": 2.0,
+      "lighting_inconsistency": 1.5,
+      "frequency_artifact": 1.5,
+      "blending_boundary": 1.5,
+      "geometric_distortion": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "forehead": {
+      "texture_inconsistency": 2.5,
+      "blending_boundary": 2.0,
+      "color_tone_mismatch": 2.0,
+      "lighting_inconsistency": 1.5,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "geometric_distortion": 1.0,
+      "no_clear_artifact": 1.5
+    },
+    "chin_jaw": {
+      "blending_boundary": 3.0,
+      "geometric_distortion": 2.5,
+      "lighting_inconsistency": 2.0,
+      "texture_inconsistency": 1.5,
+      "color_tone_mismatch": 1.0,
+      "frequency_artifact": 1.0,
+      "compression_artifact": 1.0,
+      "no_clear_artifact": 1.5
+    }
+  },
+  "feature_display_names": {
+    "boundary_discontinuity": "boundary discontinuity",
+    "boundary_gradient_mean": "boundary gradient magnitude",
+    "inside_outside_color_difference": "inside-outside color difference",
+    "delta_e_neighbor": "Delta-E color difference vs neighboring skin",
+    "lbp_entropy_difference": "LBP entropy difference",
+    "laplacian_variance_difference": "Laplacian variance difference",
+    "local_contrast_difference": "local contrast difference",
+    "hue_difference": "hue difference",
+    "saturation_difference": "saturation difference",
+    "luminance_neighbor_difference": "luminance difference vs neighboring skin",
+    "illumination_gradient": "illumination gradient",
+    "landmark_symmetry_error": "landmark symmetry error",
+    "shape_ratio_deviation": "facial proportion deviation",
+    "contour_irregularity": "contour irregularity",
+    "high_low_frequency_ratio": "high-to-low frequency energy ratio",
+    "spectral_entropy_difference": "spectral entropy difference",
+    "blocking_score": "JPEG-like blocking score",
+    "block_boundary_difference": "block-boundary strength difference"
+  }
+}

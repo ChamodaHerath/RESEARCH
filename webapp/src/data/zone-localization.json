@@ -1,0 +1,44 @@
+{
+  "dataset": "FaceForensics++",
+  "n_frames_evaluated": 26938,
+  "n_frames_total": 26951,
+  "coverage_threshold": 0.3,
+  "precision": 0.9769,
+  "recall": 0.0661,
+  "f1": 0.1238,
+  "iou": 0.066,
+  "pointing_game_accuracy": 0.9966,
+  "pointing_game_n": 26441,
+  "zone_score_auc_micro": 0.6904,
+  "per_method": {
+    "Deepfakes": {
+      "precision": 0.9684,
+      "recall": 0.0413,
+      "f1": 0.0792
+    },
+    "Face2Face": {
+      "precision": 0.9649,
+      "recall": 0.0552,
+      "f1": 0.1045
+    },
+    "FaceSwap": {
+      "precision": 0.9894,
+      "recall": 0.1287,
+      "f1": 0.2277
+    },
+    "NeuralTextures": {
+      "precision": 0.9692,
+      "recall": 0.0466,
+      "f1": 0.089
+    }
+  },
+  "causal_faithfulness": {
+    "deletion_auc_attribution_order": 0.4419,
+    "deletion_auc_random_order": 0.4142,
+    "insertion_auc_attribution_order": 0.226,
+    "insertion_auc_random_order": 0.2286,
+    "n_frames": 200
+  },
+  "claim": "When a facial zone is flagged by the explanation head, it coincides with a truly manipulated region under FF++ manipulation-mask ground truth with high precision; the top-scored zone hits a GT-manipulated region in the pointing game on nearly all evaluated frames.",
+  "scope_note": "Mask ground-truth validation applies to FaceForensics++ evaluation only. Live uploads without masks receive textual faithfulness + causal occlusion checks, not pixel-level manipulation GT."
+}
